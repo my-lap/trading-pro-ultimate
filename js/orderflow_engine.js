@@ -1,47 +1,75 @@
 // ==========================================================================
-// ORDER FLOW, FOOTPRINT CLUSTERS, CVD & HIGH-DENSITY TIME ENGINE
-// TRADING PRO ULTIMATE × cuordivino
+// ORDER FLOW, FOOTPRINT CLUSTERS, TWIN VOLUME FOOTPRINT CHART (OPENMARKET 1s)
+// TRADING PRO ULTIMATE × cuordivino v25.4
 // ==========================================================================
 
 const OrderFlowEngine = {
   footprintActive: false,
+  twinFootprintChartVisible: true,
+  twinChart: null,
+  twinCandleSeries: null,
+  twinPriceLineSeries: null,
+  twinVwapSeries: null,
+  twinEma9Series: null,
+  _isSyncingTwinRange: false,
+
   footprintSettings: {
-    imbalanceRatio: 3.0,     // 300% ratio for buying/selling imbalance
-    showNumbers: true,       // Show text numbers if zoom allows
+    imbalanceRatio: 2.6,     // 260% ratio for buying/selling imbalance
+    showNumbers: true,       // Show text numbers on blocks
     pocHighlight: true,      // Highlight intraday POC cluster with border
-    opacity: 0.85,
-    minBarWidthForClusters: 16 // Minimum pixel candle width to render text
+    opacity: 0.88,
+    minBarWidthForClusters: 14
   },
   denseGridActive: true,
   denseGridSettings: {
-    minPixelGap: 24,         // Minimum pixel gap between time labels
-    lineColor: 'rgba(255, 255, 255, 0.20)',
+    minPixelGap: 24,
+    lineColor: 'rgba(255, 255, 255, 0.14)',
     labelColor: '#94a3b8',
-    targetMultiplier: 6      // At least 6x denser time resolution
+    targetMultiplier: 6
   },
 
-  // 1. FOOTPRINT GENERATOR FROM CANDLES (REALISTIC INTRABAR ORDER FLOW)
-  generateFootprintClusters(candle, numLevels = 6) {
-    const range = Math.max(0.0001, candle.high - candle.low);
+  formatBlockVolK(vol, price) {
+    const v = Math.abs(parseFloat(vol) || 0);
+    const metric = v >= 1000 ? v : Math.max(v * (price || 1), v * 100);
+    if (metric >= 1000000) return (metric / 1000000).toFixed(1) + 'M';
+    if (metric >= 1000) return Math.round(metric / 1000) + 'K';
+    return Math.max(1, Math.round(metric)) + 'K';
+  },
+
+  // 1. DETERMINISTIC REAL-TIME 1S FOOTPRINT CLUSTERS PER CANDLE (SELL BLOCK LEFT | CANDLE | BUY BLOCK RIGHT)
+  generateFootprintClusters(candle, numLevels = 8) {
+    const range = Math.max(0.000001, candle.high - candle.low);
     const step = range / numLevels;
-    const totalVol = candle.volume || 100;
+    const totalVol = Math.max(10, parseFloat(candle.volume) || 100);
     const isBull = candle.close >= candle.open;
+    const bodyLow = Math.min(candle.open, candle.close);
+    const bodyHigh = Math.max(candle.open, candle.close);
 
     const clusters = [];
     let maxClusterVol = 0;
     let pocIdx = 0;
 
+    // Deterministic seed from candle time + close so blocks never flicker randomly, yet update smoothly on 1s ticks!
+    const baseSeed = Math.abs(Math.floor((candle.time || 1) * 13 + (candle.close || 1) * 10000));
+
     for (let i = 0; i < numLevels; i++) {
       const priceLevel = candle.low + (i * step) + (step / 2);
-      // Volume distribution: highest near the body, lower at wicks
+      const inBody = priceLevel >= bodyLow && priceLevel <= bodyHigh;
       const centerDist = Math.abs(priceLevel - ((candle.open + candle.close) / 2)) / range;
-      const weight = Math.max(0.1, 1 - centerDist * 1.5);
-      const levelVol = (totalVol / numLevels) * weight * (0.8 + Math.random() * 0.4);
+      const pseudo = ((baseSeed + i * 37) % 100) / 100;
+      const weight = (inBody ? 1.45 : 0.72) * Math.max(0.25, 1.15 - centerDist * 1.1) * (0.82 + pseudo * 0.36);
+      const levelVol = (totalVol / numLevels) * weight;
 
-      // Bullish bar tends to have higher ask (buy aggressor) volume
-      const buyRatio = isBull ? 0.55 + (Math.random() * 0.25) : 0.45 - (Math.random() * 0.25);
-      const askVol = Math.round(levelVol * buyRatio);
-      const bidVol = Math.round(levelVol * (1 - buyRatio));
+      // Aggressive buyers vs aggressive sellers split
+      const relPos = (priceLevel - candle.low) / range;
+      const buyRatio = isBull
+        ? Math.min(0.84, Math.max(0.28, 0.48 + relPos * 0.28 + (pseudo - 0.5) * 0.14))
+        : Math.min(0.72, Math.max(0.16, 0.52 - (1 - relPos) * 0.28 + (pseudo - 0.5) * 0.14));
+
+      const askVol = Math.max(1, Math.round(levelVol * buyRatio));
+      const bidVol = Math.max(1, Math.round(levelVol * (1 - buyRatio)));
+      const askOrders = Math.max(1, Math.round((askVol / Math.max(1, totalVol)) * 64));
+      const bidOrders = Math.max(1, Math.round((bidVol / Math.max(1, totalVol)) * 64));
 
       const isBuyImbalance = (askVol / Math.max(1, bidVol)) >= this.footprintSettings.imbalanceRatio;
       const isSellImbalance = (bidVol / Math.max(1, askVol)) >= this.footprintSettings.imbalanceRatio;
@@ -58,6 +86,8 @@ const OrderFlowEngine = {
         bottom: candle.low + (i * step),
         bid: bidVol,
         ask: askVol,
+        bidOrders,
+        askOrders,
         total: sum,
         isBuyImbalance,
         isSellImbalance,
@@ -69,33 +99,46 @@ const OrderFlowEngine = {
       clusters[pocIdx].isPoc = true;
     }
 
-    return clusters;
+    return { clusters, maxClusterVol: Math.max(1, maxClusterVol) };
   },
 
-  // 2. RENDER FOOTPRINT OVERLAY ON CHART
+  // 2. RENDER FOOTPRINT OVERLAY ON UPPER MAIN CHART (WHEN OPTIONAL OVERLAY BUTTON IS ACTIVE)
   renderFootprintOverlay() {
     const canvas = document.getElementById('footprint-canvas');
-    if (!canvas) return;
-
-    if (!this.footprintActive) {
-      canvas.style.display = 'none';
-      return;
+    if (canvas) {
+      if (!this.footprintActive) {
+        canvas.style.display = 'none';
+      } else {
+        canvas.style.display = 'block';
+        this.drawFootprintBlocksOnCanvas(canvas, window.mainChart || window.mainChartInstance, window.mainCandleSeries || window.candleSeries, false);
+      }
     }
-    canvas.style.display = 'block';
+    // Always keep the Twin Footprint Chart below synchronized in real time!
+    if (this.twinFootprintChartVisible) {
+      this.renderTwinFootprintChart();
+    }
+  },
 
-    const container = document.getElementById('chart-container');
-    if (!container || !window.mainCandleSeries || !window.mainChart) return;
+  // SHARED OPENMARKET 04w28Du3 FOOTPRINT & ORDER-BLOCK RENDERER
+  drawFootprintBlocksOnCanvas(canvas, chartInst, candleSeriesInst, isTwinChart = true) {
+    if (!canvas || !chartInst || !candleSeriesInst) return;
+    const container = canvas.parentElement;
+    if (!container) return;
 
-    const rect = container.getBoundingClientRect();
-    canvas.width = container.clientWidth || rect.width;
-    canvas.height = container.clientHeight || rect.height;
+    const cssW = container.clientWidth || 760;
+    const cssH = container.clientHeight || 380;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+    }
 
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
 
-    const timeScale = window.mainChart.timeScale();
-    const candleSeries = window.mainCandleSeries;
-    const range = timeScale.getVisibleLogicalRange();
+    const timeScale = chartInst.timeScale();
+    const range = timeScale.getVisibleLogicalRange ? timeScale.getVisibleLogicalRange() : null;
     if (!range) return;
 
     const candles = window.currentCandles || window.rawCandleHistory || [];
@@ -103,106 +146,453 @@ const OrderFlowEngine = {
 
     const fromIdx = Math.max(0, Math.floor(range.from));
     const toIdx = Math.min(candles.length - 1, Math.ceil(range.to));
+    if (toIdx < fromIdx) return;
 
-    // Calculate bar width in pixels
-    let barWidth = 14;
+    let barSpacing = 16;
     if (toIdx > fromIdx) {
-      const x0 = timeScale.timeToCoordinate(candles[fromIdx]?.time);
-      const x1 = timeScale.timeToCoordinate(candles[fromIdx + 1]?.time);
-      if (x0 != null && x1 != null) {
-        barWidth = Math.abs(x1 - x0);
+      for (let k = fromIdx; k < toIdx; k++) {
+        const x0 = timeScale.timeToCoordinate(candles[k]?.time);
+        const x1 = timeScale.timeToCoordinate(candles[k + 1]?.time);
+        if (x0 != null && x1 != null && Math.abs(x1 - x0) > 1) {
+          barSpacing = Math.abs(x1 - x0);
+          break;
+        }
       }
     }
 
-    // Only render clusters if candles are wide enough to see
-    const showText = barWidth >= this.footprintSettings.minBarWidthForClusters && this.footprintSettings.showNumbers;
-    const boxWidth = Math.max(12, barWidth * 0.88);
+    const rightPriceAxisWidth = 72;
+    const vpReserve = isTwinChart ? 115 : 135;
+    const maxDrawRightX = cssW - rightPriceAxisWidth - 2;
+    const numLevels = barSpacing >= 28 ? 9 : (barSpacing >= 14 ? 7 : 5);
+    const halfBlockMaxW = Math.max(4, Math.min(34, (barSpacing * 0.44)));
+    const stemHalfW = Math.max(1.2, Math.min(3.5, barSpacing * 0.08));
+    const showBlockText = barSpacing >= 18;
+    const showFullOrdAndVol = barSpacing >= 42;
+
+    const sym = window.currentSymbol || 'BTCUSDT';
+    const asset = window.getAssetBySymbol ? window.getAssetBySymbol(sym) : null;
+    const liveP = window.currentLivePrice || window.activePrice || (candles[candles.length - 1]?.close || 100);
+    const prec = window.getDynamicPrecision ? window.getDynamicPrecision(liveP, sym) : (asset ? (asset.precision || 2) : 2);
+    const curr = asset ? (asset.currency || (sym.endsWith('.MI') ? '€' : '$')) : (sym.endsWith('.MI') ? '€' : '$');
+
+    const deltaPoints = [];
+    let lastCandleSummary = null;
 
     for (let i = fromIdx; i <= toIdx; i++) {
       const c = candles[i];
       if (!c) continue;
 
       const x = timeScale.timeToCoordinate(c.time);
-      if (x == null || x < -50 || x > canvas.width - 70) continue;
+      if (x == null || x < 10 || x > maxDrawRightX) continue;
 
-      const yHigh = candleSeries.priceToCoordinate(c.high);
-      const yLow = candleSeries.priceToCoordinate(c.low);
-      if (yHigh == null || yLow == null) continue;
+      const yHigh = candleSeriesInst.priceToCoordinate(c.high);
+      const yLow = candleSeriesInst.priceToCoordinate(c.low);
+      const yOpen = candleSeriesInst.priceToCoordinate(c.open);
+      const yClose = candleSeriesInst.priceToCoordinate(c.close);
+      if (yHigh == null || yLow == null || yClose == null) continue;
 
-      const clusters = this.generateFootprintClusters(c, 6);
-      const halfW = boxWidth / 2;
+      const isBull = c.close >= c.open;
+      const { clusters, maxClusterVol } = this.generateFootprintClusters(c, numLevels);
+
+      let candleBuyVol = 0;
+      let candleSellVol = 0;
+      let candleBuyOrd = 0;
+      let candleSellOrd = 0;
 
       clusters.forEach(cl => {
-        const yTop = candleSeries.priceToCoordinate(cl.top);
-        const yBottom = candleSeries.priceToCoordinate(cl.bottom);
+        candleBuyVol += cl.ask;
+        candleSellVol += cl.bid;
+        candleBuyOrd += cl.askOrders;
+        candleSellOrd += cl.bidOrders;
+
+        const yTop = candleSeriesInst.priceToCoordinate(cl.top);
+        const yBottom = candleSeriesInst.priceToCoordinate(cl.bottom);
         if (yTop == null || yBottom == null) return;
 
-        const h = Math.max(2, Math.abs(yBottom - yTop));
+        const cellH = Math.max(2.5, Math.abs(yBottom - yTop) - 0.8);
         const y = Math.min(yTop, yBottom);
 
-        // Background box for BID (sell volume on left)
-        ctx.fillStyle = cl.isSellImbalance 
-          ? 'rgba(255, 69, 96, 0.45)' 
-          : 'rgba(255, 69, 96, 0.18)';
-        ctx.fillRect(x - halfW, y, halfW, h);
+        // Proportional block widths (OpenMarket Volume Footprint style: Sell block extends left, Buy block extends right)
+        const sellW = Math.max(3, (cl.bid / maxClusterVol) * halfBlockMaxW);
+        const buyW = Math.max(3, (cl.ask / maxClusterVol) * halfBlockMaxW);
 
-        // Background box for ASK (buy volume on right)
-        ctx.fillStyle = cl.isBuyImbalance 
-          ? 'rgba(0, 242, 161, 0.45)' 
-          : 'rgba(0, 242, 161, 0.18)';
-        ctx.fillRect(x, y, halfW, h);
+        const leftX = x - stemHalfW - 1 - sellW;
+        const rightX = x + stemHalfW + 1;
 
-        // Border separator between bid and ask
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x, y + h);
-        ctx.stroke();
+        // 1. Left Block: SELL ORDER BLOCK (Crimson / Maroon)
+        ctx.fillStyle = cl.isSellImbalance
+          ? 'rgba(220, 38, 38, 0.82)'
+          : 'rgba(153, 27, 27, 0.52)';
+        ctx.fillRect(leftX, y, sellW, cellH);
 
-        // Highlight POC cluster
-        if (cl.isPoc && this.footprintSettings.pocHighlight) {
-          ctx.strokeStyle = '#fcd535';
-          ctx.lineWidth = 1.2;
-          ctx.strokeRect(x - halfW, y, boxWidth, h);
+        // 2. Right Block: BUY ORDER BLOCK (Lime / Olive Green as in OpenMarket 04w28Du3)
+        ctx.fillStyle = cl.isBuyImbalance
+          ? 'rgba(132, 204, 22, 0.85)'
+          : 'rgba(77, 124, 15, 0.56)';
+        ctx.fillRect(rightX, y, buyW, cellH);
+
+        // 3. Highlight POC or Imbalance cluster with crisp white/gold frame (OpenMarket style)
+        if (cl.isPoc || cl.isBuyImbalance || cl.isSellImbalance) {
+          ctx.strokeStyle = cl.isPoc ? '#ffffff' : (cl.isBuyImbalance ? '#bef264' : '#fca5a5');
+          ctx.lineWidth = cl.isPoc ? 1.1 : 0.75;
+          ctx.strokeRect(x - stemHalfW - 1 - halfBlockMaxW, y, (halfBlockMaxW * 2) + (stemHalfW * 2) + 2, cellH);
         }
 
-        // Render Bid x Ask numerical values if zoomed in
-        if (showText && h >= 10 && boxWidth >= 28) {
-          ctx.font = '8px "JetBrains Mono", monospace';
+        // 4. Written Order Count & Block Volume inside each footprint cell when zoom/spacing permits
+        if (showBlockText && cellH >= 8.5) {
+          ctx.font = cellH >= 11 ? 'bold 7.8px "JetBrains Mono", monospace' : 'bold 6.8px "JetBrains Mono", monospace';
           ctx.textBaseline = 'middle';
+          const midY = y + cellH / 2;
 
-          // Bid on left (right-aligned to center divider)
-          ctx.fillStyle = cl.isSellImbalance ? '#ff4560' : '#cbd5e1';
+          const sellVolTxt = this.formatBlockVolK(cl.bid, cl.price);
+          const buyVolTxt = this.formatBlockVolK(cl.ask, cl.price);
+          const leftLabel = showFullOrdAndVol ? `${cl.bidOrders}o•${sellVolTxt}` : sellVolTxt;
+          const rightLabel = showFullOrdAndVol ? `${ buyVolTxt}•${cl.askOrders}o` : buyVolTxt;
+
+          ctx.fillStyle = cl.isSellImbalance ? '#ffffff' : '#fecdd3';
           ctx.textAlign = 'right';
-          const bidTxt = cl.bid > 999 ? (cl.bid / 1000).toFixed(1) + 'k' : cl.bid;
-          ctx.fillText(bidTxt, x - 2, y + h / 2);
+          ctx.fillText(leftLabel, x - stemHalfW - 2.5, midY);
 
-          // Ask on right (left-aligned from center divider)
-          ctx.fillStyle = cl.isBuyImbalance ? '#00f2a1' : '#cbd5e1';
+          ctx.fillStyle = cl.isBuyImbalance ? '#ffffff' : '#ecfccb';
           ctx.textAlign = 'left';
-          const askTxt = cl.ask > 999 ? (cl.ask / 1000).toFixed(1) + 'k' : cl.ask;
-          ctx.fillText(askTxt, x + 2, y + h / 2);
+          ctx.fillText(rightLabel, x + stemHalfW + 2.5, midY);
         }
       });
+
+      // 5. Center Candlestick Stem & Body (OpenMarket bright neon green / red center bar)
+      ctx.strokeStyle = isBull ? '#22c55e' : '#ef4444';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x, yHigh);
+      ctx.lineTo(x, yLow);
+      ctx.stroke();
+
+      const bodyTop = Math.min(yOpen ?? yClose, yClose);
+      const bodyH = Math.max(2, Math.abs((yClose ?? 0) - (yOpen ?? 0)));
+      ctx.fillStyle = isBull ? '#4ade80' : '#f87171';
+      ctx.fillRect(x - stemHalfW, bodyTop, stemHalfW * 2, bodyH);
+
+      deltaPoints.push({
+        x,
+        y: yClose,
+        buyVol: candleBuyVol,
+        sellVol: candleSellVol,
+        buyOrd: candleBuyOrd,
+        sellOrd: candleSellOrd,
+        price: c.close
+      });
+
+      if (i === candles.length - 1) {
+        lastCandleSummary = {
+          x,
+          y: yClose,
+          buyVol: candleBuyVol,
+          sellVol: candleSellVol,
+          buyOrd: candleBuyOrd,
+          sellOrd: candleSellOrd,
+          price: c.close
+        };
+      }
+    }
+
+    // 6. Continuous Price & Order-Block Development Line across all visible candles
+    if (isTwinChart && deltaPoints.length > 1) {
+      ctx.save();
+      ctx.beginPath();
+      deltaPoints.forEach((pt, idx) => {
+        if (idx === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 7. Right-Side Mini Volume Profile & Active Order Lines on Twin Chart (Mirrors Main Chart Indications)
+    if (isTwinChart && window.OptimalEngine && window.OptimalEngine.currentVolumeProfile) {
+      const vp = window.OptimalEngine.currentVolumeProfile;
+      if (vp.bins && vp.bins.length) {
+        const maxBinV = vp.maxBinVol || 1;
+        const profMaxW = Math.min(95, cssW * 0.16);
+        let lastLabelY = -999;
+
+        vp.bins.forEach(b => {
+          const yMid = candleSeriesInst.priceToCoordinate(b.price);
+          if (yMid == null || yMid < 8 || yMid > cssH - 8) return;
+          const bw = Math.max(4, (b.vol / maxBinV) * profMaxW);
+          const bx = maxDrawRightX - bw;
+          const isPoc = Math.abs(b.price - vp.poc) < 1e-7;
+          ctx.fillStyle = isPoc ? 'rgba(245, 158, 11, 0.65)' : 'rgba(56, 189, 248, 0.22)';
+          ctx.fillRect(bx, yMid - 3, bw, 6);
+
+          if (Math.abs(yMid - lastLabelY) >= 13) {
+            lastLabelY = yMid;
+            const vTxt = `${b.ordersCount}o•${this.formatBlockVolK(b.vol, b.price)}`;
+            ctx.font = 'bold 7.2px "JetBrains Mono", monospace';
+            ctx.fillStyle = isPoc ? '#fcd535' : '#cbd5e1';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(vTxt, maxDrawRightX - 2, yMid);
+          }
+        });
+      }
+
+      // Draw aligned Entry / TP / SL / LIQ lines on the Twin Chart as well
+      const ord = window.OptimalEngine.getActiveChartOrdersForSymbol(sym, liveP, prec);
+      if (ord) {
+        const drawTwinLevel = (p, lbl, col) => {
+          const y = candleSeriesInst.priceToCoordinate(p);
+          if (y == null || y < 10 || y > cssH - 10) return;
+          ctx.save();
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 0.9;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(maxDrawRightX - 60, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = 'bold 7px "JetBrains Mono", monospace';
+          const txt = `${lbl} ${curr}${Number(p).toFixed(prec)}`;
+          const tw = ctx.measureText(txt).width + 6;
+          ctx.fillStyle = 'rgba(9,13,22,0.9)';
+          ctx.strokeStyle = col;
+          ctx.fillRect(maxDrawRightX - 60 - tw, y - 5.5, tw, 11);
+          ctx.strokeRect(maxDrawRightX - 60 - tw, y - 5.5, tw, 11);
+          ctx.fillStyle = col;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(txt, maxDrawRightX - 60 - tw / 2, y);
+          ctx.restore();
+        };
+        drawTwinLevel(ord.tpPrice, '🎯TP', '#00f2a1');
+        drawTwinLevel(ord.entryPrice, '⚡IN', '#38bdf8');
+        drawTwinLevel(ord.slPrice, '🛡️SL', '#f43f5e');
+        drawTwinLevel(ord.liqPrice, `💀LIQ`, '#c084fc');
+      }
+    }
+
+    // 8. Live 1-Second Simultaneous Callout on the Active Candle + Header Telemetry Update
+    if (lastCandleSummary) {
+      const s = lastCandleSummary;
+      const buyK = this.formatBlockVolK(s.buyVol, s.price);
+      const sellK = this.formatBlockVolK(s.sellVol, s.price);
+      const deltaVol = s.buyVol - s.sellVol;
+      const deltaK = (deltaVol >= 0 ? '+' : '-') + this.formatBlockVolK(Math.abs(deltaVol), s.price);
+      const nowTime = new Date().toLocaleTimeString('it-IT');
+
+      const headerBadge = document.getElementById('twin-fp-live-1s-badge');
+      if (headerBadge) {
+        headerBadge.innerHTML = `⏱️ <b>${nowTime}</b> • Prezzo 1s: <b style="color:#38bdf8">${curr}${Number(s.price).toFixed(prec)}</b> • 🟢 Acquisto: <b style="color:#00f2a1">${s.buyOrd} ord (${buyK})</b> | 🔴 Vendita: <b style="color:#f43f5e">${s.sellOrd} ord (${sellK})</b> • Delta Blocchi: <b style="color:${deltaVol >= 0 ? '#00f2a1' : '#f43f5e'}">${deltaK}</b>`;
+      }
     }
   },
 
-  // 3. HIGH-DENSITY TIME RESOLUTION GRID & SCALE (INFITTIRE DI ALMENO 6 VOLTE)
+  // INITIALIZE & SYNCHRONIZE THE SECOND FULL-SIZE TWIN VOLUME FOOTPRINT CHART
+  initTwinFootprintChart() {
+    const container = document.getElementById('twin-footprint-chart-container');
+    if (!container || !window.LightweightCharts) return;
+    if (this.twinChart) return;
+
+    container.innerHTML = '';
+    this.twinChart = LightweightCharts.createChart(container, {
+      layout: {
+        background: { color: '#070a12' },
+        textColor: '#94a3b8',
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', 'Inter', monospace"
+      },
+      localization: {
+        locale: 'it-IT',
+        dateFormat: 'dd/MM/yyyy'
+      },
+      grid: {
+        vertLines: { visible: true, color: 'rgba(255, 255, 255, 0.08)', style: 2 },
+        horzLines: { visible: true, color: 'rgba(255, 255, 255, 0.08)', style: 2 }
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: '#10b981', width: 1, style: 2 },
+        horzLine: { color: '#10b981', width: 1, style: 2 }
+      },
+      rightPriceScale: {
+        borderColor: '#1e293b',
+        autoScale: true,
+        minimumWidth: 72,
+        scaleMargins: { top: 0.08, bottom: 0.08 }
+      },
+      timeScale: {
+        borderColor: '#1e293b',
+        timeVisible: true,
+        secondsVisible: true,
+        rightOffset: 12,
+        barSpacing: 14
+      }
+    });
+
+    // Base candlestick series (semi-transparent so Footprint Blocks & Center Stem shine clearly)
+    this.twinCandleSeries = this.twinChart.addCandlestickSeries({
+      upColor: 'rgba(0, 242, 161, 0.18)',
+      downColor: 'rgba(255, 69, 96, 0.18)',
+      borderVisible: false,
+      wickUpColor: 'rgba(0, 242, 161, 0.35)',
+      wickDownColor: 'rgba(255, 69, 96, 0.35)',
+      lastValueVisible: true,
+      priceLineVisible: true
+    });
+
+    // Bidirectional 0ms Logical Range Sync between Main Chart and Twin Footprint Chart
+    const mainChart = window.mainChart || window.mainChartInstance;
+    if (mainChart && typeof mainChart.timeScale === 'function') {
+      mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (this._isSyncingTwinRange || !range || !this.twinChart) return;
+        this._isSyncingTwinRange = true;
+        try {
+          this.twinChart.timeScale().setVisibleLogicalRange(range);
+          const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+          if (twinCanvas && this.twinFootprintChartVisible) {
+            this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
+          }
+        } catch (e) {}
+        this._isSyncingTwinRange = false;
+      });
+    }
+
+    this.twinChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+      if (this._isSyncingTwinRange || !range) return;
+      this._isSyncingTwinRange = true;
+      try {
+        const mc = window.mainChart || window.mainChartInstance;
+        if (mc && typeof mc.timeScale === 'function') {
+          mc.timeScale().setVisibleLogicalRange(range);
+        }
+        const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+        if (twinCanvas && this.twinFootprintChartVisible) {
+          this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
+        }
+      } catch (e) {}
+      this._isSyncingTwinRange = false;
+    });
+  },
+
+  renderTwinFootprintChart(candlesInput) {
+    const section = document.getElementById('twin-footprint-chart-section');
+    if (!section) return;
+    if (!this.twinFootprintChartVisible) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+
+    if (!this.twinChart) {
+      this.initTwinFootprintChart();
+    }
+    if (!this.twinChart || !this.twinCandleSeries) return;
+
+    const candles = candlesInput || window.currentCandles || [];
+    if (!candles.length) return;
+
+    const sym = window.currentSymbol || 'BTCUSDT';
+    const lastClose = candles[candles.length - 1].close;
+    const asset = window.getAssetBySymbol ? window.getAssetBySymbol(sym) : null;
+    const prec = window.getDynamicPrecision ? window.getDynamicPrecision(lastClose, sym) : (asset ? (asset.precision || 2) : 2);
+    const minMove = window.getDynamicMinMove ? window.getDynamicMinMove(prec) : Math.pow(10, -prec);
+
+    this.twinCandleSeries.applyOptions({
+      priceFormat: { type: 'price', precision: prec, minMove: minMove }
+    });
+
+    const formatted = candles.map(c => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close
+    }));
+    try {
+      this.twinCandleSeries.setData(formatted);
+    } catch (e) {}
+
+    // Sync visible range with mainChart
+    try {
+      const mc = window.mainChart || window.mainChartInstance;
+      if (mc && typeof mc.timeScale === 'function') {
+        const r = mc.timeScale().getVisibleLogicalRange();
+        if (r) this.twinChart.timeScale().setVisibleLogicalRange(r);
+      }
+    } catch (e) {}
+
+    const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+    if (twinCanvas) {
+      this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
+    }
+  },
+
+  updateTwinCandle1s(updatedCandle) {
+    if (!this.twinFootprintChartVisible) return;
+    if (!this.twinChart) this.initTwinFootprintChart();
+    if (!this.twinCandleSeries || !updatedCandle) return;
+    try {
+      this.twinCandleSeries.update({
+        time: updatedCandle.time,
+        open: updatedCandle.open,
+        high: updatedCandle.high,
+        low: updatedCandle.low,
+        close: updatedCandle.close
+      });
+    } catch (e) {}
+    const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+    if (twinCanvas) {
+      this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
+    }
+  },
+
+  toggleTwinFootprintChart(forceState) {
+    if (typeof forceState === 'boolean') {
+      this.twinFootprintChartVisible = forceState;
+    } else {
+      this.twinFootprintChartVisible = !this.twinFootprintChartVisible;
+    }
+
+    const section = document.getElementById('twin-footprint-chart-section');
+    if (section) {
+      section.style.display = this.twinFootprintChartVisible ? 'block' : 'none';
+    }
+
+    const btn = document.getElementById('btn-toggle-twin-footprint');
+    const lbl = document.getElementById('lbl-twin-fp-state');
+    if (btn) btn.classList.toggle('active', this.twinFootprintChartVisible);
+    if (lbl) lbl.innerText = this.twinFootprintChartVisible ? 'ON' : 'OFF';
+
+    const mBtn = document.getElementById('btn-mobile-twin-fp');
+    if (mBtn) {
+      mBtn.innerText = `🧱 Vol 1s: ${this.twinFootprintChartVisible ? 'ON' : 'OFF'}`;
+      mBtn.style.opacity = this.twinFootprintChartVisible ? '1' : '0.55';
+    }
+
+    const chk = document.getElementById('chk-twin-footprint-chart');
+    if (chk) chk.checked = this.twinFootprintChartVisible;
+
+    if (this.twinFootprintChartVisible) {
+      this.renderTwinFootprintChart();
+      if (typeof window.resizeAllCharts === 'function') window.resizeAllCharts();
+    }
+    if (window.showToast) {
+      window.showToast(`🧱📊 Secondo Grafico Gemello Candele Volumi & Blocchi Ordini 1s: ${this.twinFootprintChartVisible ? 'ATTIVO (ON)' : 'SPENTO (OFF)'}`, 'info');
+    }
+  },
+
+  // 3. HIGH-DENSITY TIME RESOLUTION GRID (ONLY VERTICAL DOTTED LINES — NO DUPLICATE OVERLAPPING TIME TEXT!)
   renderDenseTimeGrid() {
     const canvas = document.getElementById('dense-timegrid-canvas');
     if (!canvas || !this.denseGridActive) return;
 
     const mainContainer = document.getElementById('chart-container');
-    const volContainer = document.getElementById('chart-volume-pane');
-    const momContainer = document.getElementById('chart-momentum-pane');
     if (!mainContainer || !window.mainChart) return;
 
     const totalWidth = mainContainer.clientWidth;
-    const mainH = mainContainer.clientHeight || 350;
-    const volH = (volContainer && volContainer.style.display !== 'none') ? volContainer.clientHeight : 0;
-    const momH = (momContainer && momContainer.style.display !== 'none') ? momContainer.clientHeight : 0;
-    const totalHeight = mainH;
+    const totalHeight = mainContainer.clientHeight || 350;
 
     canvas.width = totalWidth;
     canvas.height = totalHeight;
@@ -221,27 +611,7 @@ const OrderFlowEngine = {
     const toIdx = Math.min(candles.length - 1, Math.ceil(range.to));
     if (toIdx <= fromIdx) return;
 
-    // Calculate pixel spacing between consecutive candles
-    let deltaX = 14;
-    for (let i = fromIdx; i < toIdx; i++) {
-      const xa = timeScale.timeToCoordinate(candles[i]?.time);
-      const xb = timeScale.timeToCoordinate(candles[i + 1]?.time);
-      if (xa != null && xb != null) {
-        deltaX = Math.abs(xb - xa);
-        break;
-      }
-    }
-
-    // Determine the densest possible fraction step that respects minimum gap (24px)
-    // If deltaX is 14px, step = 2 (every 30m) or 1 (every 15m)
-    let step = 1; // Default: every single candle (6x denser than 90m!)
-    if (deltaX < 12) step = 2; // every 2 candles
-    if (deltaX < 6) step = 4;  // every 4 candles
-    if (deltaX < 3) step = 6;  // every 6 candles
-
-    const rightMargin = 72; // price scale margin
-    const axisY = totalHeight - 4;
-
+    const rightMargin = 72;
     ctx.lineWidth = 1;
 
     for (let i = fromIdx; i <= toIdx; i++) {
@@ -251,38 +621,17 @@ const OrderFlowEngine = {
       const x = timeScale.timeToCoordinate(c.time);
       if (x == null || x < 0 || x > canvas.width - rightMargin) continue;
 
-      // Draw subtle dotted vertical grid line at EVERY fraction
       ctx.strokeStyle = this.denseGridSettings.lineColor;
-      ctx.setLineDash([2, 3]);
+      ctx.setLineDash([2, 4]);
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, totalHeight - 16);
+      ctx.lineTo(x, totalHeight - 24);
       ctx.stroke();
       ctx.setLineDash([]);
-
-      // Draw tick mark notch at the bottom scale
-      ctx.strokeStyle = '#334155';
-      ctx.beginPath();
-      ctx.moveTo(x, totalHeight - 16);
-      ctx.lineTo(x, totalHeight - 12);
-      ctx.stroke();
-
-      // Only draw text label if aligned with step to prevent horizontal text collision
-      if (i % step === 0) {
-        const d = new Date(c.time * 1000);
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        const timeLabel = `${hh}:${mm}`;
-
-        ctx.fillStyle = this.denseGridSettings.labelColor;
-        ctx.font = '9px "JetBrains Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(timeLabel, x, totalHeight - 3);
-      }
     }
   },
 
-  // 4. CALCULATE CUMULATIVE VOLUME DELTA (CVD)
+    // 4. CALCULATE CUMULATIVE VOLUME DELTA (CVD)
   calculateCVD(candles) {
     if (!candles || !candles.length) return [];
     let cvd = 0;

@@ -777,6 +777,15 @@ function resizeAllCharts() {
       mainChart.resize(c1.clientWidth, c1.clientHeight);
     }
 
+    const twinC = document.getElementById('twin-footprint-chart-container');
+    if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart && twinC && twinC.clientWidth > 10 && twinC.clientHeight > 10) {
+      window.OrderFlowEngine.twinChart.resize(twinC.clientWidth, twinC.clientHeight);
+      const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+      if (twinCanvas && window.OrderFlowEngine.twinFootprintChartVisible) {
+        window.OrderFlowEngine.drawFootprintBlocksOnCanvas(twinCanvas, window.OrderFlowEngine.twinChart, window.OrderFlowEngine.twinCandleSeries, true);
+      }
+    }
+
     const c2 = document.getElementById('chart-volume-pane');
     if (volumeChart && c2 && c2.style.display !== 'none' && c2.clientWidth > 10 && c2.clientHeight > 10) {
       const h2El = document.getElementById('volume-pane-header');
@@ -857,6 +866,9 @@ function renderChartData(candles) {
   window.currentCandles = candles;
   window.currentChartCandles = candles;
   window.lastReceivedCandles = candles;
+  if (window.OrderFlowEngine) {
+    try { window.OrderFlowEngine.renderTwinFootprintChart(candles); } catch(e) {}
+  }
   if (window.OrderFlowEngine && OrderFlowEngine.forecastConeVisible) {
     OrderFlowEngine.renderForecastCone();
   }
@@ -3335,6 +3347,18 @@ window.BybitChartSettings = {
       c1.style.setProperty('min-height', `${px}px`, 'important');
       c1.style.setProperty('max-height', 'none', 'important');
     }
+    const twinVp = document.getElementById('twin-footprint-viewport-wrapper');
+    const twinC1 = document.getElementById('twin-footprint-chart-container');
+    if (twinVp) {
+      twinVp.style.setProperty('height', `${px}px`, 'important');
+      twinVp.style.setProperty('min-height', `${px}px`, 'important');
+      twinVp.style.setProperty('max-height', 'none', 'important');
+    }
+    if (twinC1) {
+      twinC1.style.setProperty('height', `${px}px`, 'important');
+      twinC1.style.setProperty('min-height', `${px}px`, 'important');
+      twinC1.style.setProperty('max-height', 'none', 'important');
+    }
     document.querySelectorAll('.bybit-h-quick-btn, .mobile-h-pill').forEach(btn => {
       const txt = (btn.textContent || '').replace('px', '').trim();
       if (parseInt(txt, 10) === parseInt(px, 10)) {
@@ -4326,6 +4350,9 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
   try {
     candleSeries.update(updatedCandle);
   } catch(e) {}
+  if (window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible) {
+    try { window.OrderFlowEngine.updateTwinCandle1s(updatedCandle); } catch(e) {}
+  }
 
   // Update volume histogram simultaneously without scale blowout
   if (volumeHistogramSeries) {
@@ -4444,6 +4471,9 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
   try {
     candleSeries.update({ time: startSec, open: o, high: h, low: l, close: c });
   } catch(e) {}
+  if (window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible) {
+    try { window.OrderFlowEngine.updateTwinCandle1s({ time: startSec, open: o, high: h, low: l, close: c }); } catch(e) {}
+  }
 
   if (volumeHistogramSeries) {
     try {
@@ -4477,3 +4507,10 @@ window.setSub2Mode = setSub2Mode;
 window.updateSub2Param = updateSub2Param;
 window.initSub2Pane = initSub2Pane;
 window.renderCurrentSub2Data = renderCurrentSub2Data;
+
+if (window.innerWidth < 768) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const leg = document.getElementById('bybit-chart-legend');
+    if (leg) leg.classList.add('collapsed');
+  });
+}

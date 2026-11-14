@@ -528,47 +528,46 @@ window.OptimalEngine = {
       }
     });
 
-    // 3. VISIBLE CHART MINIMUM & MAXIMUM PRICE CALLOUTS (like "46.801 —●" in Hyperliquid screenshot)
+    // 3. VISIBLE CHART MINIMUM & MAXIMUM PRICE CALLOUTS (Compact & mobile-safe)
+    const isMobileView = cssW < 520;
     const drawExtremeCallout = (candle, price, isMax) => {
       if (!candle || !isFinite(price)) return;
       const y = getPriceY(price);
-      if (y < 8 || y > cssH - 8) return;
+      if (y < 10 || y > cssH - 10) return;
       let x = getTimeX(candle.time);
-      if (x === null || x < 20 || x > cssW - maxProfileWidth - 20) {
-        x = Math.round(cssW * 0.46);
+      if (x === null || x < 16 || x > cssW - maxProfileWidth - 16) {
+        x = Math.round(cssW * 0.38);
       }
 
-      const labelTxt = `${isMax ? '▲ MAX' : '▼ MIN'} ${curr}${Number(price).toFixed(prec)}`;
+      const labelTxt = `${isMax ? '▲MAX' : '▼MIN'} ${curr}${Number(price).toFixed(prec)}`;
       ctx.save();
-      ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
+      ctx.font = isMobileView ? 'bold 7.5px "JetBrains Mono", monospace' : 'bold 8.5px "JetBrains Mono", monospace';
       const tw = ctx.measureText(labelTxt).width;
-      const placeLeft = x > (tw + 38);
-      const lineEndX = placeLeft ? (x - 16) : (x + 16);
-      const boxW = tw + 10;
+      const placeLeft = x > (tw + 28);
+      const lineEndX = placeLeft ? (x - 10) : (x + 10);
+      const boxW = tw + 8;
+      const boxH = isMobileView ? 12 : 14;
       const boxX = placeLeft ? (lineEndX - boxW) : lineEndX;
       const color = isMax ? '#00f2a1' : '#f8fafc';
       const borderCol = isMax ? '#00f2a1' : '#f43f5e';
 
-      // Pointer dot on candle wick
       ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
       ctx.fillStyle = borderCol;
       ctx.fill();
 
-      // Horizontal connector line ("46.801 —●")
       ctx.strokeStyle = borderCol;
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(lineEndX, y);
       ctx.stroke();
 
-      // Callout pill
-      ctx.fillStyle = 'rgba(9, 13, 22, 0.92)';
+      ctx.fillStyle = 'rgba(9, 13, 22, 0.90)';
       ctx.strokeStyle = borderCol;
-      ctx.lineWidth = 1;
-      ctx.fillRect(boxX, y - 8, boxW, 16);
-      ctx.strokeRect(boxX, y - 8, boxW, 16);
+      ctx.lineWidth = 0.9;
+      ctx.fillRect(boxX, y - boxH / 2, boxW, boxH);
+      ctx.strokeRect(boxX, y - boxH / 2, boxW, boxH);
 
       ctx.fillStyle = color;
       ctx.textAlign = 'center';
@@ -580,58 +579,74 @@ window.OptimalEngine = {
     drawExtremeCallout(vp.maxCandle, vp.maxPrice, true);
     drawExtremeCallout(vp.minCandle, vp.minPrice, false);
 
-    // 4. PERFECT ALIGNMENT OF ORDERS ON REFERENCE CHART: ENTRY, STOP-LOSS (SL), TARGETS (TP1/TP), AND LIQUIDATION (LIQ)
+    // 4. ULTRA-COMPACT ORDER PILLS (⚡IN, TP, TP1, SL, LIQ) + LIVE 1-SECOND ORDER BLOCK BADGE ON ACTIVE PRICE
     const ord = this.getActiveChartOrdersForSymbol(vp.symbol, liveP, prec);
     if (ord) {
-      const rightLimitX = cssW - maxProfileWidth - 6;
+      const rightLimitX = cssW - maxProfileWidth - 4;
+      const usedPillYs = [];
 
-      const drawOrderLine = (price, tagLeft, tagRight, strokeCol, bgFill, isDashed = true, showTpSlPills = false) => {
+      const drawOrderLine = (price, shortTag, strokeCol, bgFill, isDashed = true, showTpSlMicro = false) => {
         if (!price || !isFinite(price) || price <= 0) return;
         const y = getPriceY(price);
-        if (y < 8 || y > cssH - 8) return;
+        if (y < 10 || y > cssH - 10) return;
 
         ctx.save();
         ctx.strokeStyle = strokeCol;
-        ctx.lineWidth = showTpSlPills ? 1.4 : 1.15;
-        if (isDashed) ctx.setLineDash([5, 4]);
+        ctx.lineWidth = showTpSlMicro ? 1.15 : 0.95;
+        if (isDashed) ctx.setLineDash([4, 4]);
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(rightLimitX, y);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.font = 'bold 9px "JetBrains Mono", monospace';
-        const fullText = `${tagLeft} ${curr}${Number(price).toFixed(prec)}${tagRight ? ' • ' + tagRight : ''}`;
+        // Ultra-compact font & height so it NEVER covers candles on iPhone or PC!
+        ctx.font = isMobileView ? 'bold 7px "JetBrains Mono", monospace' : 'bold 7.8px "JetBrains Mono", monospace';
+        const fullText = `${shortTag} ${curr}${Number(price).toFixed(prec)}`;
         const tw = ctx.measureText(fullText).width;
-        const pillW = tw + 12;
-        const pillX = Math.max(8, rightLimitX - pillW - 6);
+        const pillH = isMobileView ? 11 : 12.5;
+        const pillW = tw + 7;
 
-        // Draw Hyperliquid-style [TP] [SL] mini tags next to Entry / Limit pill
-        if (showTpSlPills) {
-          const tpSlW = 54;
-          const tpSlX = Math.max(6, pillX - tpSlW - 4);
+        // Avoid vertical collision between pills by shifting X slightly left if two levels are very close in Y
+        let xShift = 0;
+        for (let k = 0; k < usedPillYs.length; k++) {
+          if (Math.abs(usedPillYs[k].y - y) < (pillH + 2)) {
+            xShift = Math.max(xShift, usedPillYs[k].w + 4);
+          }
+        }
+        const pillX = Math.max(6, rightLimitX - pillW - 3 - xShift);
+        let totalUsedW = pillW + xShift;
+
+        if (showTpSlMicro && !isMobileView) {
+          const microW = 15;
+          const tpX = Math.max(4, pillX - (microW * 2) - 4);
+          const slX = tpX + microW + 2;
           ctx.fillStyle = 'rgba(16, 185, 129, 0.22)';
           ctx.strokeStyle = '#10b981';
-          ctx.fillRect(tpSlX, y - 8, 24, 16);
-          ctx.strokeRect(tpSlX, y - 8, 24, 16);
+          ctx.lineWidth = 0.8;
+          ctx.fillRect(tpX, y - pillH / 2, microW, pillH);
+          ctx.strokeRect(tpX, y - pillH / 2, microW, pillH);
           ctx.fillStyle = '#00f2a1';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('TP', tpSlX + 12, y);
+          ctx.fillText('TP', tpX + microW / 2, y);
 
           ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
           ctx.strokeStyle = '#f59e0b';
-          ctx.fillRect(tpSlX + 27, y - 8, 24, 16);
-          ctx.strokeRect(tpSlX + 27, y - 8, 24, 16);
+          ctx.fillRect(slX, y - pillH / 2, microW, pillH);
+          ctx.strokeRect(slX, y - pillH / 2, microW, pillH);
           ctx.fillStyle = '#fbbf24';
-          ctx.fillText('SL', tpSlX + 39, y);
+          ctx.fillText('SL', slX + microW / 2, y);
+          totalUsedW += (microW * 2) + 6;
         }
+
+        usedPillYs.push({ y, w: totalUsedW });
 
         ctx.fillStyle = bgFill;
         ctx.strokeStyle = strokeCol;
-        ctx.lineWidth = 1;
-        ctx.fillRect(pillX, y - 8.5, pillW, 17);
-        ctx.strokeRect(pillX, y - 8.5, pillW, 17);
+        ctx.lineWidth = 0.9;
+        ctx.fillRect(pillX, y - pillH / 2, pillW, pillH);
+        ctx.strokeRect(pillX, y - pillH / 2, pillW, pillH);
 
         ctx.fillStyle = strokeCol;
         ctx.textAlign = 'center';
@@ -640,14 +655,58 @@ window.OptimalEngine = {
         ctx.restore();
       };
 
-      // Draw Target Profit (TP), TP1, Entry, Stop-Loss (SL) and Liquidation (LIQ)
-      drawOrderLine(ord.tpPrice, '🎯 TARGET TP', ord.side, '#00f2a1', 'rgba(6, 46, 34, 0.92)', true, false);
-      if (ord.tp1Price && Math.abs(ord.tp1Price - ord.tpPrice) > (vp.maxPrice - vp.minPrice) * 0.03) {
-        drawOrderLine(ord.tp1Price, 'TP1 (40%)', '', '#34d399', 'rgba(6, 40, 32, 0.88)', true, false);
+      const sideChar = ord.side === 'SHORT' ? 'S' : 'L';
+      drawOrderLine(ord.tpPrice, `🎯TP`, '#00f2a1', 'rgba(6, 46, 34, 0.90)', true, false);
+      if (ord.tp1Price && Math.abs(ord.tp1Price - ord.tpPrice) > (vp.maxPrice - vp.minPrice) * 0.04) {
+        drawOrderLine(ord.tp1Price, 'TP1', '#34d399', 'rgba(6, 40, 32, 0.86)', true, false);
       }
-      drawOrderLine(ord.entryPrice, `⚡ INGRESSO (${ord.sourceLabel})`, ord.side, '#38bdf8', 'rgba(11, 25, 44, 0.94)', false, true);
-      drawOrderLine(ord.slPrice, '🛡️ STOP LOSS', `-${Math.abs(((ord.entryPrice - ord.slPrice) / (ord.entryPrice || 1)) * 100).toFixed(2)}%`, '#f43f5e', 'rgba(48, 14, 24, 0.92)', true, false);
-      drawOrderLine(ord.liqPrice, '💀 LIQUIDAZIONE', `${ord.leverage}x`, '#c084fc', 'rgba(38, 14, 54, 0.92)', true, false);
+      drawOrderLine(ord.entryPrice, `⚡IN(${sideChar})`, '#38bdf8', 'rgba(11, 25, 44, 0.92)', false, true);
+      drawOrderLine(ord.slPrice, '🛡️SL', '#f43f5e', 'rgba(48, 14, 24, 0.90)', true, false);
+      drawOrderLine(ord.liqPrice, `💀LIQ ${ord.leverage}x`, '#c084fc', 'rgba(38, 14, 54, 0.90)', true, false);
+    }
+
+    // 5. SIMULTANEOUS 1-SECOND REAL-TIME ORDER BLOCK COUNTER & VOLUME AT CURRENT LIVE PRICE
+    if (liveP > 0 && vp.bins && vp.bins.length) {
+      const yLive = getPriceY(liveP);
+      if (yLive >= 12 && yLive <= cssH - 12) {
+        // Find the bin corresponding to current live price at this exact second
+        let activeBin = vp.bins[0];
+        let minDiff = Infinity;
+        vp.bins.forEach(b => {
+          const d = Math.abs(b.price - liveP);
+          if (d < minDiff) {
+            minDiff = d;
+            activeBin = b;
+          }
+        });
+        if (activeBin) {
+          const buyOrd1s = Math.max(1, Math.round(activeBin.ordersCount * (activeBin.buyVol / Math.max(1e-9, activeBin.vol))));
+          const sellOrd1s = Math.max(1, activeBin.ordersCount - buyOrd1s);
+          const buyVolK = this.formatVolK(activeBin.buyVol, liveP);
+          const sellVolK = this.formatVolK(activeBin.sellVol, liveP);
+          const secNow = new Date().toLocaleTimeString('it-IT');
+          const liveBlockTxt = `1s [${secNow}] 🟢B:${buyOrd1s}ord(${buyVolK}) 🔴S:${sellOrd1s}ord(${sellVolK})`;
+
+          ctx.save();
+          ctx.font = isMobileView ? 'bold 6.8px "JetBrains Mono", monospace' : 'bold 7.5px "JetBrains Mono", monospace';
+          const bw = ctx.measureText(liveBlockTxt).width + 8;
+          const bh = isMobileView ? 10.5 : 12;
+          const bx = Math.max(6, cssW - maxProfileWidth - bw - 6);
+          const by = Math.max(12, Math.min(cssH - 14, yLive - bh - 4));
+
+          ctx.fillStyle = 'rgba(7, 12, 22, 0.92)';
+          ctx.strokeStyle = 'rgba(0, 242, 161, 0.65)';
+          ctx.lineWidth = 0.8;
+          ctx.fillRect(bx, by, bw, bh);
+          ctx.strokeRect(bx, by, bw, bh);
+
+          ctx.fillStyle = '#00f2a1';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(liveBlockTxt, bx + 4, by + bh / 2);
+          ctx.restore();
+        }
+      }
     }
   },
 
