@@ -489,23 +489,99 @@ const COMMODITY_ALIASES = {
   'COLGATE': 'CL.US'
 };
 
-// FAVORITES MANAGER
+// FAVORITES & WATCHLISTS MANAGER v25.3 (TOTAL LIST + BY-TYPOLOGY LISTS + CUSTOM WATCHLISTS + ACTIVE STAR LINKS)
 window.FavoritesManager = {
   STORAGE_KEY: 'tpu_favorite_assets_v6',
+  LISTS_STORAGE_KEY: 'tpu_favorite_custom_lists_v25',
+  viewMode: 'by_type', // 'total' | 'by_type'
+  activeListId: 'default_all',
+  activeSubTypeFilter: 'all',
 
-  getFavorites: function() {
+  GROUP_DEFINITIONS: [
+    { id: 'favorites', label: '⭐ Preferiti', short: 'Preferiti' },
+    { id: 'all', label: '🌐 Tutti i Gruppi', short: 'Tutti' },
+    { id: 'crypto', label: '🪙 Criptovalute (OKX/Bybit/Binance)', short: 'Cripto' },
+    { id: 'eu_stock', label: '🇮🇹 Borsa Italiana (FTSE MIB & STAR)', short: 'Borsa Italiana' },
+    { id: 'sp500', label: '🇺🇸 S&P 500 (Wall Street)', short: 'S&P 500' },
+    { id: 'nasdaq', label: '⚡ Nasdaq-100 (Tech & AI)', short: 'Nasdaq-100' },
+    { id: 'fr_stock', label: '🇫🇷 CAC 40 (Parigi)', short: 'CAC 40' },
+    { id: 'de_stock', label: '🇩🇪 DAX 40 (Francoforte)', short: 'DAX 40' },
+    { id: 'uk_stock', label: '🇬🇧 FTSE 100 (Londra)', short: 'FTSE 100' },
+    { id: 'asia_stock', label: '🇯🇵 Asia / Orientale (Tokyo/HK/Seoul)', short: 'Asia / Orientale' },
+    { id: 'me_stock', label: '🇸🇦 Mediorientale (Tadawul/ADX/DFM)', short: 'Mediorientale' },
+    { id: 'mid_cap', label: '🇮🇹🇺🇸🇬🇧 Mid-Cap & Growth', short: 'Mid-Cap' },
+    { id: 'commodities', label: '🛢️ Materie Prime & Metalli (CME/ICE)', short: 'Materie Prime' },
+    { id: 'forex', label: '💱 Forex Majors & Cross', short: 'Forex' },
+    { id: 'etf', label: '📊 ETF & Indici Mondiali', short: 'ETF & Indici' }
+  ],
+
+  getDefaultFavorites: function() {
+    return [
+      'PST.MI', 'UCG.MI', 'ISP.MI', 'ENEL.MI', 'RACE.MI', 'ANIM.MI', 'SFL.MI', 'YSY.MI', 'DLG.MI',
+      'GC', 'SI', 'CL', 'BRN', 'HG', 'ZW', 'KC', 'CC', 'XAUUSD',
+      'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'NEARUSDT', 'ENAUSDT', 'MNTUSDT', 'HYPEUSDT',
+      'NVDA', 'AAPL', 'MSFT', 'TSLA', 'GME', 'WING',
+      'SAP.DE', 'MC.PA', 'AZN.L', '7203.T', '2222.SR',
+      'EURUSD', 'GBPUSD', 'USDJPY', 'SPY', 'QQQ'
+    ];
+  },
+
+  getListsStore: function() {
     try {
+      const raw = localStorage.getItem(this.LISTS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && parsed.lists) return parsed;
+      }
+    } catch (e) {}
+    const initial = {
+      activeListId: 'default_all',
+      viewMode: 'by_type',
+      lists: {
+        default_all: {
+          id: 'default_all',
+          name: '⭐ Preferiti Principali',
+          symbols: this.getFavorites()
+        },
+        scalping_1s: {
+          id: 'scalping_1s',
+          name: '⚡ Scalping 1s & High-Beta',
+          symbols: ['BTCUSDT', 'SOLUSDT', 'ETHUSDT', 'NVDA', 'TSLA', 'UCG.MI', 'XAUUSD']
+        },
+        italia_top: {
+          id: 'italia_top',
+          name: '🇮🇹 Top Piazza Affari',
+          symbols: ['UCG.MI', 'ISP.MI', 'ENEL.MI', 'RACE.MI', 'PST.MI', 'DLG.MI', 'ENI.MI']
+        }
+      }
+    };
+    this.saveListsStore(initial);
+    return initial;
+  },
+
+  saveListsStore: function(store) {
+    try {
+      localStorage.setItem(this.LISTS_STORAGE_KEY, JSON.stringify(store));
+      if (store.lists && store.lists.default_all) {
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(store.lists.default_all.symbols));
+      }
+    } catch (e) {}
+  },
+
+  getFavorites: function(listId) {
+    const targetId = listId || this.activeListId || 'default_all';
+    try {
+      const rawLists = localStorage.getItem(this.LISTS_STORAGE_KEY);
+      if (rawLists) {
+        const parsed = JSON.parse(rawLists);
+        if (parsed && parsed.lists && parsed.lists[targetId]) {
+          return parsed.lists[targetId].symbols || [];
+        }
+      }
       const stored = localStorage.getItem(this.STORAGE_KEY);
       if (stored) return JSON.parse(stored);
     } catch (e) {}
-
-    return [
-      'PST.MI', 'UCG.MI', 'ISP.MI', 'ENEL.MI', 'RACE.MI', 'ANIM.MI', 'SFL.MI', 'YSY.MI',
-      'GC', 'SI', 'CL', 'BRN', 'HG', 'ZW', 'KC', 'CC',
-      'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'NEARUSDT', 'ENAUSDT', 'MNTUSDT', 'HYPEUSDT',
-      'NVDA', 'AAPL', 'MSFT', 'TSLA', 'GME', 'WING',
-      'EURUSD', 'GBPUSD', 'USDJPY'
-    ];
+    return this.getDefaultFavorites();
   },
 
   isFavorite: function(symbol) {
@@ -515,32 +591,218 @@ window.FavoritesManager = {
     return favs.includes(clean) || favs.includes(`${clean}.MI`);
   },
 
+  classifyAssetGroup: function(a) {
+    if (!a) return 'other';
+    const sym = (a.symbol || '').toUpperCase();
+    const commSyms = ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'ZN', 'NI', 'ZW', 'ZC', 'ZS', 'KC', 'CC', 'SB', 'CT', 'USOIL', 'BRENT', 'NATGAS', 'XAUUSD', 'XAGUSD', 'COPPER', 'GOLD', 'SILVER'];
+    if (commSyms.includes(sym) || a.cat === 'commodities' || (a.sector && (a.sector.includes('Metalli') || a.sector.includes('Energetici') || a.sector.includes('Commodities') || a.sector.includes('Agricole') || a.sector.includes('Preziosi')))) {
+      return 'commodities';
+    }
+    if (a.cat === 'crypto' || sym.endsWith('USDT')) return 'crypto';
+    if (sym.endsWith('.MI') || a.cat === 'eu_stock') return 'eu_stock';
+    if (sym.endsWith('.PA') || a.cat === 'fr_stock') return 'fr_stock';
+    if (sym.endsWith('.DE') || a.cat === 'de_stock') return 'de_stock';
+    if (sym.endsWith('.L') || a.cat === 'uk_stock') return 'uk_stock';
+    if (sym.endsWith('.T') || sym.endsWith('.KS') || sym.endsWith('.HK') || sym === 'TSM' || a.cat === 'asia_stock') return 'asia_stock';
+    if (sym.endsWith('.SR') || sym.endsWith('.AE') || sym.endsWith('.QA') || sym.endsWith('.KW') || a.cat === 'me_stock') return 'me_stock';
+    if (a.cat === 'forex' || (sym.length === 6 && ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'].some(c => sym.includes(c)) && !sym.includes('USDT'))) return 'forex';
+    if (a.cat === 'etf' || a.cat === 'indices' || ['SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'GLD', 'TLT'].includes(sym)) return 'etf';
+    if (a.cat === 'nasdaq' || a.exchange === 'NASDAQ' || (a.sector && a.sector.includes('NASDAQ'))) return 'nasdaq';
+    if (a.cat === 'sp500' || a.cat === 'us_stock' || a.exchange === 'NYSE') return 'sp500';
+    return a.cat || 'other';
+  },
+
   toggleFavorite: function(symbol, event) {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
-    symbol = symbol.toUpperCase().trim();
-    let favs = this.getFavorites();
+    symbol = (symbol || window.currentSymbol || 'BTCUSDT').toUpperCase().trim();
+    const store = this.getListsStore();
+    const listId = this.activeListId || store.activeListId || 'default_all';
+    if (!store.lists[listId]) {
+      store.lists[listId] = { id: listId, name: '⭐ Preferiti Principali', symbols: this.getFavorites() };
+    }
+    let favs = store.lists[listId].symbols || [];
     const isFav = favs.includes(symbol);
 
     if (isFav) {
       favs = favs.filter(s => s !== symbol && s !== `${symbol}.MI`);
-      if (window.showToast) window.showToast(`⭐ Rimosso dai Preferiti: ${symbol}`, 'info');
+      if (window.showToast) window.showToast(`☆ Rimosso da "${store.lists[listId].name}": ${symbol}`, 'info');
     } else {
-      favs.push(symbol);
-      if (window.showToast) window.showToast(`⭐ Aggiunto ai Preferiti: ${symbol}!`, 'success');
+      favs.unshift(symbol);
+      if (window.showToast) window.showToast(`★ Aggiunto a "${store.lists[listId].name}": ${symbol}!`, 'success');
     }
 
-    try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(favs));
-    } catch (e) {}
+    store.lists[listId].symbols = favs;
+    if (listId !== 'default_all' && store.lists.default_all && !isFav && !store.lists.default_all.symbols.includes(symbol)) {
+      store.lists.default_all.symbols.unshift(symbol);
+    }
+    this.saveListsStore(store);
+    this.syncAllStarLinksInDOM();
 
     if (window.filterMegaCategory) {
-      window.filterMegaCategory(window.activeMegaCategory || 'all');
+      const searchInp = document.getElementById('mega-asset-search-input');
+      if (searchInp && searchInp.value && searchInp.value.trim()) {
+        window.onMegaSearchInput(searchInp.value);
+      } else {
+        window.filterMegaCategory(window.activeMegaCategory || 'favorites');
+      }
     }
+    if (window._renderBybitQuickModalList) {
+      const mInp = document.getElementById('bybit-search-input');
+      window._renderBybitQuickModalList(mInp ? mInp.value : '');
+    }
+    if (window.OpportunityScanner) {
+      try {
+        window.OpportunityScanner.renderTerminalQuickRadar();
+        const scannerTab = document.getElementById('tab-scanner');
+        if (scannerTab && scannerTab.classList.contains('active')) {
+          window.OpportunityScanner.renderScannerTab();
+        }
+      } catch (e) {}
+    }
+  },
+
+  setViewMode: function(mode, event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    this.viewMode = (mode === 'total') ? 'total' : 'by_type';
+    const store = this.getListsStore();
+    store.viewMode = this.viewMode;
+    this.saveListsStore(store);
+    if (window.filterMegaCategory) {
+      window.filterMegaCategory('favorites', document.querySelector('.mega-tab-pill[data-mega-cat="favorites"]'));
+    }
+  },
+
+  setSubTypeFilter: function(subType, event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    this.activeSubTypeFilter = subType || 'all';
+    if (window.filterMegaCategory) {
+      window.filterMegaCategory('favorites', document.querySelector('.mega-tab-pill[data-mega-cat="favorites"]'));
+    }
+  },
+
+  selectList: function(listId, event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    this.activeListId = listId || 'default_all';
+    const store = this.getListsStore();
+    store.activeListId = this.activeListId;
+    this.saveListsStore(store);
+    this.syncAllStarLinksInDOM();
+    if (window.filterMegaCategory) {
+      window.filterMegaCategory('favorites', document.querySelector('.mega-tab-pill[data-mega-cat="favorites"]'));
+    }
+  },
+
+  createCustomList: function(customName, event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const name = (customName || prompt('Nome della nuova Lista Preferiti (es. Crypto Big, Italia Dividendi, Scalping):', '⭐ Nuova Lista Preferiti') || '').trim();
+    if (!name) return;
+    const id = 'list_' + Date.now();
+    const store = this.getListsStore();
+    const curSym = (window.currentSymbol || 'BTCUSDT').toUpperCase();
+    store.lists[id] = {
+      id: id,
+      name: name.startsWith('⭐') || name.startsWith('⚡') || name.startsWith('🇮🇹') ? name : `⭐ ${name}`,
+      symbols: [curSym]
+    };
+    store.activeListId = id;
+    this.activeListId = id;
+    this.saveListsStore(store);
+    this.syncAllStarLinksInDOM();
+    if (window.showToast) window.showToast(`✅ Creata lista preferiti "${store.lists[id].name}" con ${curSym}!`, 'success');
+    if (window.filterMegaCategory) {
+      window.filterMegaCategory('favorites', document.querySelector('.mega-tab-pill[data-mega-cat="favorites"]'));
+    }
+  },
+
+  deleteActiveCustomList: function(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (this.activeListId === 'default_all') {
+      if (window.showToast) window.showToast('ℹ️ La lista Preferiti Principali non può essere eliminata.', 'info');
+      return;
+    }
+    const store = this.getListsStore();
+    const removedName = store.lists[this.activeListId]?.name || this.activeListId;
+    delete store.lists[this.activeListId];
+    this.activeListId = 'default_all';
+    store.activeListId = 'default_all';
+    this.saveListsStore(store);
+    this.syncAllStarLinksInDOM();
+    if (window.showToast) window.showToast(`🗑️ Lista "${removedName}" eliminata.`, 'info');
+    if (window.filterMegaCategory) {
+      window.filterMegaCategory('favorites', document.querySelector('.mega-tab-pill[data-mega-cat="favorites"]'));
+    }
+  },
+
+  openFavoritesCategoryLink: function(subType, event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    this.activeSubTypeFilter = subType || 'all';
+    this.viewMode = subType && subType !== 'all' ? 'by_type' : this.viewMode;
+    const drop = document.getElementById('asset-mega-dropdown');
+    if (drop) drop.classList.add('open');
+    const favTab = document.querySelector('.mega-tab-pill[data-mega-cat="favorites"]');
+    if (window.filterMegaCategory) {
+      window.filterMegaCategory('favorites', favTab);
+    }
+  },
+
+  syncAllStarLinksInDOM: function() {
+    const activeSym = (window.currentSymbol || 'BTCUSDT').toUpperCase().trim();
+    const isActFav = this.isFavorite(activeSym);
+    const allFavs = this.getFavorites();
+
+    const topStar = document.getElementById('active-asset-fav-star');
+    if (topStar) {
+      topStar.innerText = isActFav ? '★' : '☆';
+      topStar.style.color = isActFav ? '#fcd535' : '#64748b';
+      topStar.style.textShadow = isActFav ? '0 0 10px rgba(252,213,53,0.65)' : 'none';
+      topStar.classList.toggle('active', isActFav);
+    }
+
+    const addBtn = document.getElementById('mega-add-current-fav-btn');
+    if (addBtn) {
+      addBtn.innerHTML = isActFav ? `★ ${activeSym} nei Preferiti` : `☆ + Aggiungi ${activeSym}`;
+      addBtn.style.borderColor = isActFav ? '#fcd535' : '#475569';
+      addBtn.style.color = isActFav ? '#fcd535' : '#e2e8f0';
+    }
+
+    const countBadge = document.getElementById('fav-total-count-badge');
+    if (countBadge) {
+      countBadge.innerText = `⭐ Preferiti (${allFavs.length})`;
+    }
+
+    document.querySelectorAll('[data-fav-star-sym]').forEach(el => {
+      const sym = el.getAttribute('data-fav-star-sym');
+      const f = this.isFavorite(sym);
+      el.innerText = f ? '★' : '☆';
+      el.classList.toggle('active', f);
+      el.style.color = f ? '#fcd535' : '#64748b';
+    });
   }
 };
+setTimeout(() => {
+  if (window.FavoritesManager) window.FavoritesManager.syncAllStarLinksInDOM();
+}, 350);
 
 window.getAssetBySymbol = function(symbol) {
   if (!symbol) return null;

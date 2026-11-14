@@ -98,20 +98,26 @@ window.OptimalEngine = {
     this.renderOptimalCards();
   },
 
-  // 2. LOCAL VOLUME PROFILE (OPENMARKET.XYZ / VRVP STYLE)
+  // 2. LOCAL VOLUME PROFILE (HYPERLIQUID / OPENMARKET.XYZ VRVP STYLE — 1S REAL-TIME PRICE-ALIGNED)
   calculateLocalVolumeProfile: function() {
     const candles = window.currentCandles || [];
-    if (!candles || candles.length < 5) return;
+    if (!candles || candles.length < 3) return;
 
+    const chartInst = window.mainChart || window.mainChartInstance;
     let studyCandles = [];
-    if (this.volumeProfileRange === 'visible' && window.mainChart && typeof window.mainChart.timeScale === 'function') {
+    let fromIdx = 0;
+    let toIdx = candles.length - 1;
+
+    if (chartInst && typeof chartInst.timeScale === 'function') {
       try {
-        const timeScale = window.mainChart.timeScale();
+        const timeScale = chartInst.timeScale();
         const vRange = timeScale.getVisibleLogicalRange ? timeScale.getVisibleLogicalRange() : null;
         if (vRange && candles.length) {
-          const fromIdx = Math.max(0, Math.floor(vRange.from));
-          const toIdx = Math.min(candles.length - 1, Math.ceil(vRange.to));
-          studyCandles = candles.slice(fromIdx, toIdx + 1);
+          fromIdx = Math.max(0, Math.floor(vRange.from));
+          toIdx = Math.min(candles.length - 1, Math.ceil(vRange.to));
+          if (toIdx >= fromIdx) {
+            studyCandles = candles.slice(fromIdx, toIdx + 1);
+          }
         }
       } catch (e) {
         studyCandles = [];
@@ -129,12 +135,25 @@ window.OptimalEngine = {
 
     let minPrice = Infinity;
     let maxPrice = -Infinity;
+    let minCandle = null;
+    let maxCandle = null;
     let totalVol = 0;
+    let totalNotional = 0;
+    let totalOrdersCount = 0;
 
     studyCandles.forEach(c => {
-      if (c.low < minPrice) minPrice = c.low;
-      if (c.high > maxPrice) maxPrice = c.high;
-      totalVol += (c.volume || 10);
+      if (c.low < minPrice) {
+        minPrice = c.low;
+        minCandle = c;
+      }
+      if (c.high > maxPrice) {
+        maxPrice = c.high;
+        maxCandle = c;
+      }
+      const v = Math.max(1, parseFloat(c.volume) || 10);
+      const avgP = (c.high + c.low + c.close) / 3;
+      totalVol += v;
+      totalNotional += (v * avgP);
     });
 
     if (minPrice >= maxPrice || !isFinite(minPrice) || !isFinite(maxPrice)) return;
@@ -142,46 +161,68 @@ window.OptimalEngine = {
     const sym = window.activeSymbol || window.currentSymbol || 'BTCUSDT';
     const asset = window.getAssetBySymbol ? window.getAssetBySymbol(sym) : null;
     const prec = window.getDynamicPrecision ? window.getDynamicPrecision(minPrice, sym) : (asset ? (asset.precision || 2) : 2);
-    const curr = asset ? (asset.currency || '$') : '$';
+    const curr = asset ? (asset.currency || (sym.endsWith('.MI') ? '€' : '$')) : (sym.endsWith('.MI') ? '€' : '$');
 
-    const numBins = Math.max(12, Math.min(120, this.volumeProfileBins || 36));
+    const numBins = Math.max(16, Math.min(80, this.volumeProfileBins || 32));
     const binSize = (maxPrice - minPrice) / numBins;
+    const avgCandleVol = totalVol / Math.max(1, studyCandles.length);
+
     const bins = new Array(numBins).fill(0).map((_, i) => ({
-      price: +(minPrice + (i * binSize)).toFixed(prec),
+      priceLow: minPrice + (i * binSize),
+      priceHigh: minPrice + ((i + 1) * binSize),
+      price: +(minPrice + ((i + 0.5) * binSize)).toFixed(prec),
       vol: 0,
+      notionalVol: 0,
       buyVol: 0,
-      sellVol: 0
+      sellVol: 0,
+      ordersCount: 0
     }));
 
+    // Distribute each candle's volume across all price bins touched between candle.low and candle.high
     studyCandles.forEach(c => {
-      const vol = c.volume || 10;
+      const vol = Math.max(1, parseFloat(c.volume) || 10);
       const isUp = (c.close >= c.open);
-      const buyFraction = isUp ? 0.65 : 0.35;
-      const buyV = vol * buyFraction;
-      const sellV = vol * (1 - buyFraction);
+      const buyFraction = isUp ? 0.64 : 0.36;
+      const startBin = Math.max(0, Math.min(numBins - 1, Math.floor((c.low - minPrice) / (binSize || 1e-9))));
+      const endBin = Math.max(startBin, Math.min(numBins - 1, Math.floor((c.high - minPrice) / (binSize || 1e-9))));
+      const span = Math.max(1, endBin - startBin + 1);
+      const volPerBin = vol / span;
+      const estCandleOrders = Math.max(4, Math.round((vol / Math.max(1, avgCandleVol)) * 28));
+      const ordersPerBin = Math.max(1, Math.round(estCandleOrders / span));
 
-      const mid = (c.high + c.low + c.close) / 3;
-      const idx = Math.min(numBins - 1, Math.max(0, Math.floor((mid - minPrice) / binSize)));
-      bins[idx].vol += vol;
-      bins[idx].buyVol += buyV;
-      bins[idx].sellVol += sellV;
-    });
-
-    // Find POC (Point of Control = bin with max volume)
-    let maxBinVol = 0;
-    let pocPrice = minPrice;
-    bins.forEach(b => {
-      if (b.vol > maxBinVol) {
-        maxBinVol = b.vol;
-        pocPrice = b.price;
+      for (let bIdx = startBin; bIdx <= endBin; bIdx++) {
+        // Weight higher near close & body
+        const bCenter = bins[bIdx].price;
+        const bodyWeight = (bCenter >= Math.min(c.open, c.close) && bCenter <= Math.max(c.open, c.close)) ? 1.35 : 0.85;
+        const wVol = volPerBin * bodyWeight;
+        bins[bIdx].vol += wVol;
+        bins[bIdx].notionalVol += wVol * bCenter;
+        bins[bIdx].buyVol += wVol * buyFraction;
+        bins[bIdx].sellVol += wVol * (1 - buyFraction);
+        bins[bIdx].ordersCount += ordersPerBin;
       }
     });
 
-    // Compute Value Area (default 70% of total volume around POC)
+    // Normalize bin volumes & compute total orders
+    let maxBinVol = 0;
+    let pocPrice = minPrice;
+    let pocBin = bins[0];
+    bins.forEach(b => {
+      b.ordersCount = Math.max(1, Math.round(b.ordersCount));
+      totalOrdersCount += b.ordersCount;
+      if (b.vol > maxBinVol) {
+        maxBinVol = b.vol;
+        pocPrice = b.price;
+        pocBin = b;
+      }
+    });
+
+    // Compute Value Area (70% of total volume around POC)
     const vaPct = this.volumeProfileVaPct || 0.70;
-    const targetVaVol = totalVol * vaPct;
+    const sumBinsVol = bins.reduce((acc, x) => acc + x.vol, 0) || 1;
+    const targetVaVol = sumBinsVol * vaPct;
     let currentVaVol = maxBinVol;
-    let lowIdx = bins.findIndex(b => Math.abs(b.price - pocPrice) < 0.0000001);
+    let lowIdx = bins.indexOf(pocBin);
     if (lowIdx === -1) lowIdx = 0;
     let highIdx = lowIdx;
 
@@ -203,12 +244,17 @@ window.OptimalEngine = {
     const val = bins[lowIdx] ? bins[lowIdx].price : minPrice;
 
     this.currentVolumeProfile = {
+      symbol: sym,
       poc: pocPrice,
       vah: vah,
       val: val,
       minPrice: minPrice,
       maxPrice: maxPrice,
+      minCandle: minCandle,
+      maxCandle: maxCandle,
       totalVolume: Math.round(totalVol),
+      totalNotional: totalNotional,
+      totalOrdersCount: totalOrdersCount,
       bins: bins,
       maxBinVol: maxBinVol,
       precision: prec,
@@ -219,7 +265,108 @@ window.OptimalEngine = {
     this.renderVolumeProfileOverlay();
   },
 
-  // RENDER HORIZONTAL LOCAL VOLUME PROFILE ON CHART (ANCHORED TO RIGHT/LEFT, SCALABLE & NUMERIC)
+  // Format volume in K / M (Hyperliquid VRVP style: e.g. 191K, 847K, 1.24M)
+  formatVolK: function(vol, price) {
+    const v = Math.abs(parseFloat(vol) || 0);
+    // Use notional if unit volume is small (e.g. BTC 12.5 -> $840K) or raw volume if >= 1000
+    const metric = v >= 1000 ? v : Math.max(v * (price || 1), v * 1000);
+    if (metric >= 1000000) return (metric / 1000000).toFixed(2) + 'M';
+    if (metric >= 1000) return Math.round(metric / 1000) + 'K';
+    return Math.max(1, Math.round(metric)) + 'K';
+  },
+
+  // Collect all active manual, assisted, optimal & automatic (RealTimeLedgerV25) order levels for the current chart symbol
+  getActiveChartOrdersForSymbol: function(sym, livePrice, prec) {
+    const cleanSym = (sym || window.currentSymbol || 'BTCUSDT').toUpperCase().trim();
+    let entryPrice = parseFloat(document.getElementById('t-entry')?.value) || 0;
+    let slPrice = parseFloat(document.getElementById('t-sl')?.value) || 0;
+    let tpPrice = parseFloat(document.getElementById('t-tp')?.value) || 0;
+    let tp1Price = 0;
+    let tp2Price = 0;
+    let leverage = 5;
+    let side = (window.BybitEngine && window.BybitEngine.orderSide === 'Sell') ? 'SHORT' : 'LONG';
+    let sourceLabel = 'Ordine Attivo';
+
+    // 1. Check RealTimeLedgerV25 automatic/active operations for this symbol
+    if (window.RealTimeLedgerV25 && Array.isArray(window.RealTimeLedgerV25.operations)) {
+      const autoOp = window.RealTimeLedgerV25.operations.find(o =>
+        o.symbol && o.symbol.toUpperCase() === cleanSym && (o.status === 'IN_PROGRESS' || o.status === 'QUEUED')
+      );
+      if (autoOp) {
+        // Keep auto operation calibrated to current live price scale if needed
+        const ratio = livePrice > 0 ? (autoOp.entryPrice / livePrice) : 1;
+        if (ratio > 0.7 && ratio < 1.3) {
+          entryPrice = autoOp.entryPrice;
+          slPrice = autoOp.stopLossPrice;
+          tp1Price = autoOp.tp1Price;
+          tp2Price = autoOp.tp2Price;
+          tpPrice = autoOp.targetProfitPrice;
+          leverage = parseFloat(autoOp.leverage) || leverage;
+          side = autoOp.side || 'LONG';
+          sourceLabel = `Auto ${autoOp.exchangeName ? autoOp.exchangeName.replace(/^[^A-Za-z]+/, '') : 'CED'} ${leverage}x`;
+        }
+      }
+    }
+
+    // 2. Check BybitEngine active positions
+    if (window.BybitEngine && Array.isArray(window.BybitEngine.positions)) {
+      const pos = window.BybitEngine.positions.find(p => p.symbol && p.symbol.toUpperCase() === cleanSym);
+      if (pos && pos.entryPrice > 0) {
+        entryPrice = parseFloat(pos.entryPrice);
+        if (pos.stopLoss > 0) slPrice = parseFloat(pos.stopLoss);
+        if (pos.takeProfit > 0) tpPrice = parseFloat(pos.takeProfit);
+        leverage = parseFloat(pos.leverage) || leverage;
+        side = (pos.side === 'Sell' || pos.side === 'SHORT') ? 'SHORT' : 'LONG';
+        sourceLabel = `Posizione Live ${leverage}x`;
+      }
+    }
+
+    // 3. Validate against livePrice scale (prevent stale cross-asset order inputs)
+    if (!entryPrice || (livePrice > 0 && (entryPrice / livePrice < 0.5 || entryPrice / livePrice > 1.8))) {
+      entryPrice = livePrice;
+    }
+    if (!slPrice || (livePrice > 0 && (slPrice / livePrice < 0.5 || slPrice / livePrice > 1.8))) {
+      slPrice = +(side === 'SHORT' ? entryPrice * 1.018 : entryPrice * 0.982).toFixed(prec);
+    }
+    if (!tpPrice || (livePrice > 0 && (tpPrice / livePrice < 0.5 || tpPrice / livePrice > 1.8))) {
+      tpPrice = +(side === 'SHORT' ? entryPrice * 0.962 : entryPrice * 1.038).toFixed(prec);
+    }
+    if (!tp1Price) {
+      tp1Price = +(entryPrice + (tpPrice - entryPrice) * 0.45).toFixed(prec);
+    }
+
+    // 4. Resolve effective leverage from LeverageMatrixV24 or BybitEngine
+    if (window.LeverageMatrixV24 && typeof window.LeverageMatrixV24.resolveEffectiveLeverageForTrade === 'function') {
+      try {
+        const res = window.LeverageMatrixV24.resolveEffectiveLeverageForTrade({ symbol: cleanSym });
+        if (res && res.appliedLeverage) leverage = res.appliedLeverage;
+      } catch (e) {}
+    } else if (window.BybitEngine && window.BybitEngine.leverage) {
+      leverage = parseFloat(window.BybitEngine.leverage) || leverage;
+    }
+    leverage = Math.max(1, leverage);
+
+    // Compute exact Liquidation Price (maintaining safety margin buffer)
+    const liqDistPct = Math.min(0.85, (1 / Math.max(1.15, leverage)) * 0.92);
+    const liqPrice = +(side === 'SHORT'
+      ? entryPrice * (1 + liqDistPct)
+      : entryPrice * (1 - liqDistPct)).toFixed(prec);
+
+    return {
+      symbol: cleanSym,
+      side,
+      leverage,
+      sourceLabel,
+      entryPrice: +Number(entryPrice).toFixed(prec),
+      slPrice: +Number(slPrice).toFixed(prec),
+      tp1Price: +Number(tp1Price).toFixed(prec),
+      tp2Price: tp2Price ? +Number(tp2Price).toFixed(prec) : 0,
+      tpPrice: +Number(tpPrice).toFixed(prec),
+      liqPrice: +Number(liqPrice).toFixed(prec)
+    };
+  },
+
+  // RENDER HORIZONTAL LOCAL VOLUME PROFILE + WRITTEN ORDER COUNT & VOL IN K + VISIBLE MIN/MAX + ALIGNED ORDERS ON CHART
   renderVolumeProfileOverlay: function() {
     const overlay = document.getElementById('chart-vp-overlay');
     if (!overlay) return;
@@ -235,6 +382,9 @@ window.OptimalEngine = {
 
     const prec = vp.precision !== undefined ? vp.precision : 2;
     const curr = vp.currency || '$';
+    const liveP = window.currentLivePrice || window.activePrice || vp.poc;
+    const totalVolK = this.formatVolK(vp.totalVolume, liveP);
+    const totalOrdStr = (vp.totalOrdersCount || 0).toLocaleString();
 
     let badge = document.getElementById('vp-badge');
     let canvas = document.getElementById('vp-canvas');
@@ -249,13 +399,14 @@ window.OptimalEngine = {
     }
 
     if (badge) {
-      const posLabel = this.volumeProfileStyle === 'right' ? 'DESTRA' : (this.volumeProfileStyle === 'left' ? 'SINISTRA' : 'FLOTTANTE');
       badge.innerHTML = `
-        <span style="color:var(--text-muted)">Volumi Locali (${posLabel}):</span>
+        <span style="color:#00f2a1; font-weight:800;">● VRVP 1s</span>
         <span style="color:var(--accent); font-weight:800">POC ${curr}${Number(vp.poc).toFixed(prec)}</span>
         <span style="color:var(--cyan)">VAH ${curr}${Number(vp.vah).toFixed(prec)}</span>
         <span style="color:var(--purple)">VAL ${curr}${Number(vp.val).toFixed(prec)}</span>
-        <span style="color:var(--text-dim)">Vol: ${vp.totalVolume.toLocaleString()} (${vp.candleCount || 0} bars)</span>
+        <span style="color:#fcd535; font-weight:800;">N° Ordini: ${totalOrdStr} ord</span>
+        <span style="color:#38bdf8; font-weight:800;">Vol: ${totalVolK}</span>
+        <span style="color:#cbd5e1;">Max: <b style="color:#00f2a1">${curr}${Number(vp.maxPrice).toFixed(prec)}</b> • Min: <b style="color:#f43f5e">${curr}${Number(vp.minPrice).toFixed(prec)}</b></span>
       `;
     }
 
@@ -265,25 +416,26 @@ window.OptimalEngine = {
     const cssW = Math.max(260, overlay.clientWidth || Math.round(rect.width) || (parentEl ? parentEl.clientWidth - 68 : 760));
     const cssH = Math.max(180, overlay.clientHeight || Math.round(rect.height) || (parentEl ? parentEl.clientHeight - 26 : 440));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+    }
 
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const candleSeries = window.mainCandleSeries;
+    const candleSeries = window.mainCandleSeries || window.candleSeries;
+    const chartInst = window.mainChart || window.mainChartInstance;
     const numBins = vp.bins.length;
     const maxBinVol = vp.maxBinVol || 1;
 
-    // Compact institutional width (never stretches or covers candlesticks)
-    const userWidth = this.volumeProfileWidth || 135;
-    const maxProfileWidth = Math.max(55, Math.min(cssW * 0.18, userWidth));
+    const userWidth = this.volumeProfileWidth || 150;
+    const maxProfileWidth = Math.max(70, Math.min(cssW * 0.22, userWidth));
     const isRight = (this.volumeProfileStyle === 'right' || !this.volumeProfileStyle);
     const isLeft = (this.volumeProfileStyle === 'left');
-    const isFloating = (this.volumeProfileStyle === 'floating');
 
-    // Helper to get Y coordinate for any price
+    // Exact Y coordinate locked 1:1 to LightweightCharts price scale
     const getPriceY = (price) => {
       if (candleSeries && typeof candleSeries.priceToCoordinate === 'function') {
         const coord = candleSeries.priceToCoordinate(price);
@@ -293,7 +445,18 @@ window.OptimalEngine = {
       return cssH - (norm * cssH);
     };
 
-    // 1. Draw POC Ray across chart (subtle golden dashed ray)
+    // Exact X coordinate locked 1:1 to LightweightCharts time scale
+    const getTimeX = (timeSec) => {
+      if (chartInst && typeof chartInst.timeScale === 'function') {
+        try {
+          const x = chartInst.timeScale().timeToCoordinate(timeSec);
+          if (x !== null && !isNaN(x)) return x;
+        } catch (e) {}
+      }
+      return null;
+    };
+
+    // 1. Draw POC Ray across chart
     if (this.volumeProfileShowPocRay && vp.poc) {
       const pocY = getPriceY(vp.poc);
       if (pocY >= 0 && pocY <= cssH) {
@@ -301,144 +464,194 @@ window.OptimalEngine = {
         ctx.lineWidth = 1.1;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
-        if (isRight) {
-          ctx.moveTo(0, pocY);
-          ctx.lineTo(cssW - maxProfileWidth - 6, pocY);
-        } else {
-          ctx.moveTo(maxProfileWidth + 6, pocY);
-          ctx.lineTo(cssW, pocY);
-        }
+        ctx.moveTo(0, pocY);
+        ctx.lineTo(cssW, pocY);
         ctx.stroke();
         ctx.setLineDash([]);
       }
     }
 
-    // 2. Draw VAH and VAL subtle reference lines across chart
-    if (vp.vah) {
-      const vahY = getPriceY(vp.vah);
-      if (vahY >= 0 && vahY <= cssH) {
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, vahY);
-        ctx.lineTo(cssW, vahY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-    if (vp.val) {
-      const valY = getPriceY(vp.val);
-      if (valY >= 0 && valY <= cssH) {
-        ctx.strokeStyle = 'rgba(168, 85, 247, 0.28)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, valY);
-        ctx.lineTo(cssW, valY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
+    // 2. Render Volume Profile Histogram Bars (Buy/Sell split + Written Order Count & Volume in K on every visible row!)
+    let lastTextY = -999;
+    vp.bins.forEach((b) => {
+      const yTop = getPriceY(b.priceHigh);
+      const yBot = getPriceY(b.priceLow);
+      const yMid = getPriceY(b.price);
+      if (yMid < -20 || yMid > cssH + 20) return;
 
-    let lastLabelY = -999;
-
-    // 3. Render Volume Histogram Bars (Strictly positioned: Right, Left, or Floating)
-    vp.bins.forEach((b, idx) => {
-      const y = getPriceY(b.price);
-      if (y < -20 || y > cssH + 20) return;
-
-      let barH = 4;
-      if (idx < numBins - 1) {
-        const nextY = getPriceY(vp.bins[idx + 1].price);
-        if (nextY != null && !isNaN(nextY)) {
-          barH = Math.max(2, Math.min(16, Math.abs(y - nextY) * 0.85));
-        }
-      }
-
+      const rawH = Math.abs(yBot - yTop);
+      const barH = Math.max(3, Math.min(22, (rawH || 8) * 0.86));
       const isPoc = Math.abs(b.price - vp.poc) < 0.0000001;
       const inVa = b.price >= vp.val && b.price <= vp.vah;
-      const barW = Math.max(3, (b.vol / maxBinVol) * maxProfileWidth);
+      const totalW = Math.max(6, (b.vol / maxBinVol) * maxProfileWidth);
+      const buyW = totalW * (b.buyVol / Math.max(1e-9, b.vol));
+      const sellW = Math.max(0, totalW - buyW);
 
-      // Determine bar position
-      let barX = 0;
-      if (isRight) {
-        barX = cssW - barW - 2;
-      } else if (isLeft) {
-        barX = 2;
-      } else {
-        barX = Math.max(10, cssW * 0.60 - barW);
-      }
+      const barX = isRight ? (cssW - totalW - 2) : (isLeft ? 2 : Math.max(10, cssW * 0.60 - totalW));
 
-      // Bar fill colors (semi-transparent so candles underneath remain 100% readable)
+      // Dual-tone institutional VRVP bar (Hyperliquid orange/gold & cyan/teal style)
       if (isPoc) {
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.72)';
-      } else if (inVa) {
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.28)';
-      } else {
-        ctx.fillStyle = 'rgba(100, 116, 139, 0.16)';
-      }
-      ctx.fillRect(barX, y - barH / 2, barW, barH);
-
-      if (isPoc) {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.78)';
+        ctx.fillRect(barX, yMid - barH / 2, totalW, barH);
         ctx.strokeStyle = '#fcd535';
         ctx.lineWidth = 1;
-        ctx.strokeRect(barX, y - barH / 2, barW, barH);
+        ctx.strokeRect(barX, yMid - barH / 2, totalW, barH);
+      } else {
+        // Sell portion (warm amber/copper) + Buy portion (gold/cyan)
+        ctx.fillStyle = inVa ? 'rgba(217, 119, 6, 0.48)' : 'rgba(180, 83, 9, 0.28)';
+        ctx.fillRect(barX, yMid - barH / 2, sellW, barH);
+        ctx.fillStyle = inVa ? 'rgba(234, 179, 8, 0.62)' : 'rgba(56, 189, 248, 0.28)';
+        ctx.fillRect(barX + sellW, yMid - barH / 2, buyW, barH);
       }
 
-      // ONLY for POC: Draw a single crisp institutional badge on the anchored edge
-      if (isPoc) {
-        const pocVolTxt = b.vol >= 1000 ? (b.vol / 1000).toFixed(1) + 'k' : Math.round(b.vol);
-        const pocLabel = `POC ${curr}${Number(b.price).toFixed(prec)} (${pocVolTxt})`;
-        ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
-        const txtW = ctx.measureText(pocLabel).width;
-        const badgeW = txtW + 10;
-        const badgeX = isRight ? (cssW - badgeW - 4) : 4;
-
-        ctx.fillStyle = 'rgba(11, 15, 25, 0.92)';
-        ctx.strokeStyle = '#fcd535';
-        ctx.lineWidth = 1;
-        ctx.fillRect(badgeX, y - 8, badgeW, 16);
-        ctx.strokeRect(badgeX, y - 8, badgeW, 16);
-
-        ctx.fillStyle = '#fcd535';
-        ctx.textAlign = 'center';
+      // Written Order Count + Volume in K on the right edge (Hyperliquid VRVP style: e.g. "42 ord • 847K")
+      if (Math.abs(yMid - lastTextY) >= 11.5 && yMid > 12 && yMid < cssH - 12) {
+        lastTextY = yMid;
+        const volKTxt = this.formatVolK(b.vol, b.price);
+        const ordTxt = `${b.ordersCount} ord • ${volKTxt}`;
+        ctx.font = isPoc ? 'bold 9.5px "JetBrains Mono", monospace' : 'bold 8.5px "JetBrains Mono", monospace';
+        const txtX = isRight ? (cssW - 5) : (barX + totalW + 4);
+        ctx.textAlign = isRight ? 'right' : 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(pocLabel, badgeX + badgeW / 2, y);
+
+        // Subtle text shadow for crisp legibility over bars
+        ctx.fillStyle = 'rgba(9, 13, 22, 0.82)';
+        const tw = ctx.measureText(ordTxt).width;
+        if (isRight) {
+          ctx.fillRect(txtX - tw - 4, yMid - 5.5, tw + 6, 11);
+        } else {
+          ctx.fillRect(txtX - 2, yMid - 5.5, tw + 6, 11);
+        }
+
+        ctx.fillStyle = isPoc ? '#fcd535' : (inVa ? '#f8fafc' : '#cbd5e1');
+        ctx.fillText(ordTxt, txtX, yMid);
       }
     });
 
-    // 5. Subtle VAH / VAL labels on the anchored edge
-    const drawLevelBadge = (price, label, color, bg) => {
+    // 3. VISIBLE CHART MINIMUM & MAXIMUM PRICE CALLOUTS (like "46.801 —●" in Hyperliquid screenshot)
+    const drawExtremeCallout = (candle, price, isMax) => {
+      if (!candle || !isFinite(price)) return;
       const y = getPriceY(price);
-      if (y < 10 || y > cssH - 10) return;
-      const text = `${label}: ${curr}${Number(price).toFixed(prec)}`;
-      ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
-      const txtW = ctx.measureText(text).width;
-      const bW = txtW + 8;
-      const bX = isRight ? (cssW - bW - 4) : 4;
+      if (y < 8 || y > cssH - 8) return;
+      let x = getTimeX(candle.time);
+      if (x === null || x < 20 || x > cssW - maxProfileWidth - 20) {
+        x = Math.round(cssW * 0.46);
+      }
 
-      ctx.fillStyle = bg;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 0.8;
-      ctx.fillRect(bX, y - 6, bW, 13);
-      ctx.strokeRect(bX, y - 6, bW, 13);
+      const labelTxt = `${isMax ? '▲ MAX' : '▼ MIN'} ${curr}${Number(price).toFixed(prec)}`;
+      ctx.save();
+      ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
+      const tw = ctx.measureText(labelTxt).width;
+      const placeLeft = x > (tw + 38);
+      const lineEndX = placeLeft ? (x - 16) : (x + 16);
+      const boxW = tw + 10;
+      const boxX = placeLeft ? (lineEndX - boxW) : lineEndX;
+      const color = isMax ? '#00f2a1' : '#f8fafc';
+      const borderCol = isMax ? '#00f2a1' : '#f43f5e';
+
+      // Pointer dot on candle wick
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = borderCol;
+      ctx.fill();
+
+      // Horizontal connector line ("46.801 —●")
+      ctx.strokeStyle = borderCol;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(lineEndX, y);
+      ctx.stroke();
+
+      // Callout pill
+      ctx.fillStyle = 'rgba(9, 13, 22, 0.92)';
+      ctx.strokeStyle = borderCol;
+      ctx.lineWidth = 1;
+      ctx.fillRect(boxX, y - 8, boxW, 16);
+      ctx.strokeRect(boxX, y - 8, boxW, 16);
 
       ctx.fillStyle = color;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(text, bX + bW / 2, y);
+      ctx.fillText(labelTxt, boxX + boxW / 2, y);
+      ctx.restore();
     };
 
-    if (vp.vah && Math.abs(vp.vah - vp.poc) > (vp.maxPrice - vp.minPrice) * 0.04) {
-      drawLevelBadge(vp.vah, 'VAH', '#38bdf8', 'rgba(10, 25, 45, 0.9)');
-    }
-    if (vp.val && Math.abs(vp.val - vp.poc) > (vp.maxPrice - vp.minPrice) * 0.04) {
-      drawLevelBadge(vp.val, 'VAL', '#a855f7', 'rgba(25, 12, 40, 0.9)');
+    drawExtremeCallout(vp.maxCandle, vp.maxPrice, true);
+    drawExtremeCallout(vp.minCandle, vp.minPrice, false);
+
+    // 4. PERFECT ALIGNMENT OF ORDERS ON REFERENCE CHART: ENTRY, STOP-LOSS (SL), TARGETS (TP1/TP), AND LIQUIDATION (LIQ)
+    const ord = this.getActiveChartOrdersForSymbol(vp.symbol, liveP, prec);
+    if (ord) {
+      const rightLimitX = cssW - maxProfileWidth - 6;
+
+      const drawOrderLine = (price, tagLeft, tagRight, strokeCol, bgFill, isDashed = true, showTpSlPills = false) => {
+        if (!price || !isFinite(price) || price <= 0) return;
+        const y = getPriceY(price);
+        if (y < 8 || y > cssH - 8) return;
+
+        ctx.save();
+        ctx.strokeStyle = strokeCol;
+        ctx.lineWidth = showTpSlPills ? 1.4 : 1.15;
+        if (isDashed) ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(rightLimitX, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        const fullText = `${tagLeft} ${curr}${Number(price).toFixed(prec)}${tagRight ? ' • ' + tagRight : ''}`;
+        const tw = ctx.measureText(fullText).width;
+        const pillW = tw + 12;
+        const pillX = Math.max(8, rightLimitX - pillW - 6);
+
+        // Draw Hyperliquid-style [TP] [SL] mini tags next to Entry / Limit pill
+        if (showTpSlPills) {
+          const tpSlW = 54;
+          const tpSlX = Math.max(6, pillX - tpSlW - 4);
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.22)';
+          ctx.strokeStyle = '#10b981';
+          ctx.fillRect(tpSlX, y - 8, 24, 16);
+          ctx.strokeRect(tpSlX, y - 8, 24, 16);
+          ctx.fillStyle = '#00f2a1';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('TP', tpSlX + 12, y);
+
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
+          ctx.strokeStyle = '#f59e0b';
+          ctx.fillRect(tpSlX + 27, y - 8, 24, 16);
+          ctx.strokeRect(tpSlX + 27, y - 8, 24, 16);
+          ctx.fillStyle = '#fbbf24';
+          ctx.fillText('SL', tpSlX + 39, y);
+        }
+
+        ctx.fillStyle = bgFill;
+        ctx.strokeStyle = strokeCol;
+        ctx.lineWidth = 1;
+        ctx.fillRect(pillX, y - 8.5, pillW, 17);
+        ctx.strokeRect(pillX, y - 8.5, pillW, 17);
+
+        ctx.fillStyle = strokeCol;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fullText, pillX + pillW / 2, y);
+        ctx.restore();
+      };
+
+      // Draw Target Profit (TP), TP1, Entry, Stop-Loss (SL) and Liquidation (LIQ)
+      drawOrderLine(ord.tpPrice, '🎯 TARGET TP', ord.side, '#00f2a1', 'rgba(6, 46, 34, 0.92)', true, false);
+      if (ord.tp1Price && Math.abs(ord.tp1Price - ord.tpPrice) > (vp.maxPrice - vp.minPrice) * 0.03) {
+        drawOrderLine(ord.tp1Price, 'TP1 (40%)', '', '#34d399', 'rgba(6, 40, 32, 0.88)', true, false);
+      }
+      drawOrderLine(ord.entryPrice, `⚡ INGRESSO (${ord.sourceLabel})`, ord.side, '#38bdf8', 'rgba(11, 25, 44, 0.94)', false, true);
+      drawOrderLine(ord.slPrice, '🛡️ STOP LOSS', `-${Math.abs(((ord.entryPrice - ord.slPrice) / (ord.entryPrice || 1)) * 100).toFixed(2)}%`, '#f43f5e', 'rgba(48, 14, 24, 0.92)', true, false);
+      drawOrderLine(ord.liqPrice, '💀 LIQUIDAZIONE', `${ord.leverage}x`, '#c084fc', 'rgba(38, 14, 54, 0.92)', true, false);
     }
   },
 
-  toggleVolumeProfileVisibility: function() {
+    toggleVolumeProfileVisibility: function() {
     this.volumeProfileVisible = !this.volumeProfileVisible;
     this.renderVolumeProfileOverlay();
     const btn = document.getElementById('btn-toggle-vp');

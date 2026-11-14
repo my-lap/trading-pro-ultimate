@@ -300,7 +300,9 @@ function initMainChart() {
     priceLineVisible: true
   });
   window.mainCandleSeries = candleSeries;
+  window.candleSeries = candleSeries;
   window.mainChartInstance = mainChart;
+  window.mainChart = mainChart;
 
   /* REAL-TIME DRAG & WHEEL SYNC FOR OVERLAYS */
   const chartMainContainer = document.getElementById('main-chart');
@@ -991,7 +993,9 @@ function renderChartData(candles) {
     const lastMaVal = volMA.length ? volMA[volMA.length - 1]?.value : 0;
     const liveVolEl = document.getElementById('pane-vol-live');
     if (liveVolEl) {
-      liveVolEl.innerText = `Vol: ${Number(lastVol).toLocaleString()} | MA: ${Number(Math.round(lastMaVal)).toLocaleString()}`;
+      const estOrders = Math.max(12, Math.round(lastVol / Math.max(1, (lastMaVal || 500) / 48)));
+      const volInK = lastVol >= 1000 ? (lastVol / 1000).toFixed(1) + 'K' : (lastVol * (candles[candles.length - 1]?.close || 1) / 1000).toFixed(1) + 'K';
+      liveVolEl.innerText = `Ordini: ${estOrders.toLocaleString()} ord • Imp. Vol: ${volInK} | Vol: ${Number(Math.round(lastVol)).toLocaleString()} | MA: ${Number(Math.round(lastMaVal)).toLocaleString()}`;
     }
   }
 
@@ -4235,6 +4239,9 @@ function renderCurrentSub2Data(candles) {
       if (window.BybitMacroCalendar && typeof BybitMacroCalendar.renderMacroGlobeTrack === 'function') {
         BybitMacroCalendar.renderMacroGlobeTrack();
       }
+      if (window.OptimalEngine && window.OptimalEngine.volumeProfileVisible) {
+        window.OptimalEngine.calculateLocalVolumeProfile();
+      }
     });
   }
 
@@ -4337,7 +4344,9 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
       });
       const liveVolEl = document.getElementById('pane-vol-live');
       if (liveVolEl) {
-        liveVolEl.innerText = `Vol: ${Number(Math.round(volVal)).toLocaleString()} | MA: ${Number(Math.round(medVol)).toLocaleString()}`;
+        const estOrders = Math.max(12, Math.round(volVal / Math.max(1, medVol / 48)));
+        const volInK = volVal >= 1000 ? (volVal / 1000).toFixed(1) + 'K' : ((volVal * price) / 1000).toFixed(1) + 'K';
+        liveVolEl.innerText = `Ordini: ${estOrders.toLocaleString()} ord • Imp. Vol: ${volInK} | Vol: ${Number(Math.round(volVal)).toLocaleString()} | MA: ${Number(Math.round(medVol)).toLocaleString()}`;
       }
     } catch(e) {}
   }
@@ -4351,6 +4360,21 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
 
   window.currentLivePrice = price;
   window.activePrice = price;
+
+  // Real-time 1-second synchronization of Volume Profile, Min/Max & Order Lines on Chart!
+  if (window.OptimalEngine && window.OptimalEngine.volumeProfileVisible) {
+    const nowMs = Date.now();
+    if (!window._lastVpTickMs || (nowMs - window._lastVpTickMs) >= 350) {
+      window._lastVpTickMs = nowMs;
+      try {
+        window.OptimalEngine.calculateLocalVolumeProfile();
+      } catch(e) {}
+    } else {
+      try {
+        window.OptimalEngine.renderVolumeProfileOverlay();
+      } catch(e) {}
+    }
+  }
 
   // Real-time synchronization of top badges
   const topPriceEl = document.getElementById('bybit-top-price');
@@ -4439,6 +4463,9 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
 
   window.currentLivePrice = c;
   window.activePrice = c;
+  if (window.OptimalEngine && window.OptimalEngine.volumeProfileVisible) {
+    try { window.OptimalEngine.calculateLocalVolumeProfile(); } catch(e) {}
+  }
 }
 
 window.onRealtimePriceTick = onRealtimePriceTick;

@@ -466,23 +466,29 @@
         
         <!-- MEGA-DROPDOWN MENU CONTENT -->
         <div class="dropdown-menu mega-asset-dropdown">
-          <input type="text" class="mega-search-box" placeholder="Cerca ticker (es. BTC, NVDA, ENEL, AAPL, ETH)..." oninput="onMegaSearchInput(this.value)">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+            <input type="text" class="mega-search-box" style="margin-bottom:0; flex:1;" placeholder="🔍 Cerca in tutti i gruppi (es. BTC, NVDA, ENEL.MI, DLG.MI, GC, EURUSD)..." oninput="onMegaSearchInput(this.value)">
+            <button type="button" class="fav-toolbar-keep-open" onclick="if(window.FavoritesManager) FavoritesManager.openFavoritesCategoryLink(window.currentSymbol, event, false);" style="padding:7px 10px; font-size:11px; font-weight:900; border-radius:6px; cursor:pointer; background:rgba(245,158,11,0.18); border:1px solid #f59e0b; color:#fbbf24; white-space:nowrap;" title="Aggiungi il titolo corrente ai Preferiti e apri la Lista Preferiti">
+              ★ + Preferito Attivo
+            </button>
+          </div>
           
           <div class="mega-tabs">
-            <button class="mega-tab-pill active" onclick="filterMegaCategory('favorites', this)">⭐ Preferiti</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('all', this)">Tutti</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('sp500', this)">🇺🇸 S&P 500</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('nasdaq', this)">⚡ Nasdaq-100</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('eu_stock', this)">🇮🇹 Borsa Italiana</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('fr_stock', this)">🇫🇷 CAC 40</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('de_stock', this)">🇩🇪 DAX 40</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('uk_stock', this)">🇬🇧 FTSE 100</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('asia_stock', this)">🇯🇵 Asia / Orientale</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('commodities', this)">🛢️ Materie Prime</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('forex', this)">💱 Forex</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('crypto', this)">🪙 Cripto</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('me_stock', this)">🇸🇦 Mediorientale</button>
-            <button class="mega-tab-pill" onclick="filterMegaCategory('mid_cap', this)">🇮🇹🇺🇸🇬🇧 Mid-Cap</button>
+            <button class="mega-tab-pill active" data-mega-cat="favorites" onclick="filterMegaCategory('favorites', this)">⭐ Preferiti (<span data-fav-count-badge>31</span>)</button>
+            <button class="mega-tab-pill" data-mega-cat="all" onclick="filterMegaCategory('all', this)">🌐 Tutti i Gruppi</button>
+            <button class="mega-tab-pill" data-mega-cat="crypto" onclick="filterMegaCategory('crypto', this)">🪙 Cripto</button>
+            <button class="mega-tab-pill" data-mega-cat="eu_stock" onclick="filterMegaCategory('eu_stock', this)">🇮🇹 Borsa Italiana</button>
+            <button class="mega-tab-pill" data-mega-cat="sp500" onclick="filterMegaCategory('sp500', this)">🇺🇸 S&amp;P 500</button>
+            <button class="mega-tab-pill" data-mega-cat="nasdaq" onclick="filterMegaCategory('nasdaq', this)">⚡ Nasdaq-100</button>
+            <button class="mega-tab-pill" data-mega-cat="fr_stock" onclick="filterMegaCategory('fr_stock', this)">🇫🇷 CAC 40</button>
+            <button class="mega-tab-pill" data-mega-cat="de_stock" onclick="filterMegaCategory('de_stock', this)">🇩🇪 DAX 40</button>
+            <button class="mega-tab-pill" data-mega-cat="uk_stock" onclick="filterMegaCategory('uk_stock', this)">🇬🇧 FTSE 100</button>
+            <button class="mega-tab-pill" data-mega-cat="asia_stock" onclick="filterMegaCategory('asia_stock', this)">🇯🇵 Asia / Orientale</button>
+            <button class="mega-tab-pill" data-mega-cat="me_stock" onclick="filterMegaCategory('me_stock', this)">🇸🇦 Mediorientale</button>
+            <button class="mega-tab-pill" data-mega-cat="mid_cap" onclick="filterMegaCategory('mid_cap', this)">🇮🇹🇺🇸🇬🇧 Mid-Cap</button>
+            <button class="mega-tab-pill" data-mega-cat="commodities" onclick="filterMegaCategory('commodities', this)">🛢️ Materie Prime</button>
+            <button class="mega-tab-pill" data-mega-cat="forex" onclick="filterMegaCategory('forex', this)">💱 Forex</button>
+            <button class="mega-tab-pill" data-mega-cat="etf" onclick="filterMegaCategory('etf', this)">📊 ETF &amp; Indici</button>
           </div>
 
           <div class="mega-asset-list" id="mega-asset-list-container">
@@ -490,6 +496,13 @@
           </div>
         </div>
       </div>
+
+      <!-- ACTIVE SYMBOL FAVORITE STAR LINK & QUICK FAVORITES TRIGGER -->
+      <a href="#preferiti-attivo" id="active-asset-fav-star" class="star-fav-btn active" data-fav-star="BTCUSDT" onclick="if(window.FavoritesManager) FavoritesManager.toggleFavorite(window.currentSymbol || 'BTCUSDT', event);" title="Clicca la stellina per aggiungere/rimuovere il titolo attivo dai Preferiti" style="font-size:18px; text-decoration:none; padding:2px 6px; border-radius:6px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#ffd700; display:inline-flex; align-items:center; justify-content:center;">★</a>
+      <a href="#apri-lista-preferiti" onclick="if(window.FavoritesManager) FavoritesManager.openFavoritesCategoryLink(null, event, false);" title="Apri la lista dei Preferiti (Totali o Divisi per Tipologia)" style="font-size:11px; font-weight:800; color:#fbbf24; text-decoration:none; padding:4px 8px; border-radius:6px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.35); display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
+        <span>⭐ Preferiti</span>
+        <span data-fav-count-badge style="background:#f59e0b; color:#000; padding:0 5px; border-radius:4px; font-size:10px; font-weight:900;">31</span>
+      </a>
 
       <span class="live-price-box" id="active-live-price">---</span>
       <span class="pct-chg-pill up" id="active-chg-badge">---</span>
@@ -3436,13 +3449,13 @@
   <script src="js/casario_quant_engine.js?v=2.9.5"></script>
   <script src="js/quant_engines.js?v=2.9.0"></script>
   <script src="js/sector_rotation.js?v=2.9.0"></script>
-  <script src="js/optimal_engine.js?v=25.2"></script>
-  <script src="js/opportunity_scanner.js?v=25.2"></script>
-  <script src="js/skills.js?v=25.2"></script>
-  <script src="js/trading.js?v=25.2"></script>
-  <script src="js/journal.js?v=25.2"></script>
-  <script src="js/alerts.js?v=25.2"></script>
-  <script src="js/app.js?v=25.2"></script>
+  <script src="js/optimal_engine.js?v=25.3"></script>
+  <script src="js/opportunity_scanner.js?v=25.3"></script>
+  <script src="js/skills.js?v=25.3"></script>
+  <script src="js/trading.js?v=25.3"></script>
+  <script src="js/journal.js?v=25.3"></script>
+  <script src="js/alerts.js?v=25.3"></script>
+  <script src="js/app.js?v=25.3"></script>
 
   <script>
     // Bybit Subtabs Switcher (Grafico, Panoramica, Dati, Alimentazione)

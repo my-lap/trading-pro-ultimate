@@ -395,6 +395,16 @@ async function selectAsset(symbol) {
   if (window.TradingEngine && window.TradingEngine.executionMode === 'assisted') {
     try { window.TradingEngine.refreshAssistedView(); } catch(e) {}
   }
+  if (window.FavoritesManager && typeof window.FavoritesManager.syncAllStarLinksInDOM === 'function') {
+    try { window.FavoritesManager.syncAllStarLinksInDOM(); } catch(e) {}
+  }
+  if (window.RealTimeLedgerV25) {
+    try {
+      const matchOp = window.RealTimeLedgerV25.operations.find(o => o.symbol === symbol);
+      if (matchOp) window.RealTimeLedgerV25.selectedChartOpId = matchOp.id;
+      window.RealTimeLedgerV25.updateLiveCellsInDOM();
+    } catch(e) {}
+  }
 }
 
 async function pollActiveQuote() {
@@ -984,107 +994,229 @@ function renderMegaAssetList(assets) {
   const container = document.getElementById('mega-asset-list-container');
   if (!container) return;
 
-  if (!assets.length) {
-    container.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-muted)">Nessun asset corrispondente trovato. Prova a cercare un altro ticker.</div>`;
-    return;
+  if (window.FavoritesManager && typeof window.FavoritesManager.syncAllStarLinksInDOM === 'function') {
+    window.FavoritesManager.syncAllStarLinksInDOM();
   }
 
-  // If in Favorites Tab, group by typology
-  if (activeMegaCategory === 'favorites') {
-    const favs = window.FavoritesManager ? window.FavoritesManager.getFavorites() : [];
-    const favAssets = (window.GlobalMarketAssets || assets).filter(a => favs.includes(a.symbol));
+  const allCatalog = window.GlobalMarketAssets || curatedAssets || [];
+  const searchInput = document.getElementById('mega-asset-search-input');
+  const activeQuery = searchInput ? (searchInput.value || '').trim() : '';
+
+  const groupMeta = {
+    crypto: { label: '🪙 Criptovalute (Listini OKX, Bybit & Binance)', short: '🪙 Cripto' },
+    eu_stock: { label: '🇮🇹 Borsa Italiana (FTSE MIB, STAR & Mid-Cap)', short: '🇮🇹 Italia' },
+    sp500: { label: '🇺🇸 S&P 500 (Wall Street Large Cap)', short: '🇺🇸 S&P 500' },
+    nasdaq: { label: '⚡ Nasdaq-100 (Big Tech, AI & Semiconduttori)', short: '⚡ Nasdaq' },
+    fr_stock: { label: '🇫🇷 CAC 40 (Euronext Parigi)', short: '🇫🇷 CAC 40' },
+    de_stock: { label: '🇩🇪 DAX 40 (Xetra Francoforte)', short: '🇩🇪 DAX 40' },
+    uk_stock: { label: '🇬🇧 FTSE 100 (London Stock Exchange)', short: '🇬🇧 FTSE 100' },
+    asia_stock: { label: '🇯🇵 Asia / Orientale (Tokyo, Hong Kong, Seoul, Taiwan)', short: '🇯🇵 Asia' },
+    me_stock: { label: '🇸🇦 Mediorientale (Tadawul, ADX, DFM, QSE)', short: '🇸🇦 Medio Oriente' },
+    commodities: { label: '🛢️ Materie Prime & Metalli Preziosi (CME / ICE / LME)', short: '🛢️ Commodities' },
+    forex: { label: '💱 Mercato Valutario (Forex Majors & Cross)', short: '💱 Forex' },
+    etf: { label: '📊 ETF & Indici Mondiali', short: '📊 ETF/Indici' },
+    other: { label: '🌐 Altri Strumenti Finanziari', short: '🌐 Altri' }
+  };
+
+  // 1. FAVORITES TAB: Supports TOTAL FAVORITES LIST ('total') OR DIVIDED BY TYPOLOGY ('by_type') + CUSTOM WATCHLISTS
+  if (activeMegaCategory === 'favorites' && !activeQuery) {
+    const fm = window.FavoritesManager;
+    const store = fm ? fm.getListsStore() : { lists: { default_all: { id: 'default_all', name: '⭐ Preferiti Principali', symbols: [] } } };
+    const activeListId = fm ? (fm.activeListId || 'default_all') : 'default_all';
+    const viewMode = fm ? (fm.viewMode || 'by_type') : 'by_type';
+    const subFilter = fm ? (fm.activeSubTypeFilter || 'all') : 'all';
+    const favs = fm ? fm.getFavorites(activeListId) : [];
+
+    const favAssets = [];
+    favs.forEach(sym => {
+      const found = allCatalog.find(a => a.symbol.toUpperCase() === sym.toUpperCase()) || (window.getAssetBySymbol ? window.getAssetBySymbol(sym) : null);
+      if (found && !favAssets.some(x => x.symbol === found.symbol)) {
+        favAssets.push(found);
+      }
+    });
+
+    // Count per typology inside Favorites
+    const typeCounts = { all: favAssets.length };
+    favAssets.forEach(a => {
+      const gKey = fm && fm.classifyAssetGroup ? fm.classifyAssetGroup(a) : (a.cat || 'other');
+      typeCounts[gKey] = (typeCounts[gKey] || 0) + 1;
+    });
+
+    const listOptionsHtml = Object.values(store.lists || {}).map(lst =>
+      `<option value="${lst.id}" ${lst.id === activeListId ? 'selected' : ''}>${lst.name} (${(lst.symbols || []).length})</option>`
+    ).join('');
+
+    let toolbarHtml = `
+      <div style="padding:8px 10px; background:rgba(15,23,42,0.95); border-bottom:1px solid rgba(252,213,53,0.28); display:flex; flex-direction:column; gap:7px; position:sticky; top:0; z-index:5;">
+        <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px;">
+          <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+            <span style="font-size:10px; font-weight:800; color:#fcd535; text-transform:uppercase;">⭐ Lista:</span>
+            <select onchange="FavoritesManager.selectList(this.value, event)" onclick="event.stopPropagation()" style="background:#090d16; color:#fcd535; border:1px solid rgba(252,213,53,0.45); border-radius:5px; padding:3px 7px; font-size:11px; font-weight:800; cursor:pointer;">
+              ${listOptionsHtml}
+            </select>
+            <button onclick="FavoritesManager.createCustomList(null, event)" style="padding:3px 7px; font-size:10px; font-weight:800; border-radius:5px; border:1px solid rgba(0,242,161,0.45); background:rgba(0,242,161,0.12); color:#00f2a1; cursor:pointer;" title="Crea una nuova lista preferiti personalizzata">+ Nuova Lista</button>
+            ${activeListId !== 'default_all' ? `<button onclick="FavoritesManager.deleteActiveCustomList(event)" style="padding:3px 6px; font-size:10px; font-weight:800; border-radius:5px; border:1px solid rgba(244,63,94,0.4); background:rgba(244,63,94,0.12); color:#f43f5e; cursor:pointer;" title="Elimina questa lista">🗑️</button>` : ''}
+          </div>
+          <div style="display:flex; align-items:center; gap:4px;">
+            <button onclick="FavoritesManager.setViewMode('total', event)" style="padding:3px 8px; font-size:10px; font-weight:800; border-radius:5px; cursor:pointer; border:1px solid ${viewMode === 'total' ? '#fcd535' : '#334155'}; background:${viewMode === 'total' ? 'rgba(252,213,53,0.2)' : 'rgba(15,23,42,0.8)'}; color:${viewMode === 'total' ? '#fcd535' : '#94a3b8'};">
+              📋 Totali Preferiti (${favAssets.length})
+            </button>
+            <button onclick="FavoritesManager.setViewMode('by_type', event)" style="padding:3px 8px; font-size:10px; font-weight:800; border-radius:5px; cursor:pointer; border:1px solid ${viewMode === 'by_type' ? '#38bdf8' : '#334155'}; background:${viewMode === 'by_type' ? 'rgba(56,189,248,0.2)' : 'rgba(15,23,42,0.8)'}; color:${viewMode === 'by_type' ? '#38bdf8' : '#94a3b8'};">
+              🗂️ Divisi per Tipologia
+            </button>
+          </div>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
+          <span style="font-size:9.5px; color:#94a3b8; font-weight:700; margin-right:2px;">Filtra Tipologia Preferiti:</span>
+          <a href="#fav-type-all" onclick="FavoritesManager.setSubTypeFilter('all', event)" style="text-decoration:none; padding:2px 6px; border-radius:4px; font-size:9.5px; font-weight:800; border:1px solid ${subFilter === 'all' ? '#fcd535' : '#1e293b'}; background:${subFilter === 'all' ? 'rgba(252,213,53,0.18)' : 'rgba(255,255,255,0.04)'}; color:${subFilter === 'all' ? '#fcd535' : '#cbd5e1'};">Tutti (${favAssets.length})</a>
+          ${Object.keys(groupMeta).filter(k => typeCounts[k] > 0).map(k => `
+            <a href="#fav-type-${k}" onclick="FavoritesManager.setSubTypeFilter('${k}', event)" style="text-decoration:none; padding:2px 6px; border-radius:4px; font-size:9.5px; font-weight:800; border:1px solid ${subFilter === k ? '#38bdf8' : '#1e293b'}; background:${subFilter === k ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)'}; color:${subFilter === k ? '#38bdf8' : '#cbd5e1'};">
+              ${groupMeta[k].short} (${typeCounts[k]})
+            </a>
+          `).join('')}
+        </div>
+      </div>
+    `;
 
     if (!favAssets.length) {
-      container.innerHTML = `
+      container.innerHTML = toolbarHtml + `
         <div style="text-align:center; padding:28px 16px; color:var(--text-muted)">
           <div style="font-size:24px; margin-bottom:8px;">⭐</div>
-          <b>Nessun titolo nei Preferiti</b>
-          <div style="font-size:11px; margin-top:4px;">Clicca sulla stellina accanto a qualsiasi titolo (Crypto, FTSE MIB, USA, Forex) per salvarlo nei tuoi Preferiti.</div>
+          <b>Nessun titolo in questa lista Preferiti</b>
+          <div style="font-size:11px; margin-top:4px;">Clicca sulla stellina attiva <b style="color:#fcd535;">★</b> accanto a qualsiasi titolo per aggiungerlo istantaneamente.</div>
         </div>
       `;
       return;
     }
 
-    const groups = {
-      crypto: { label: '🪙 Criptovalute (Listini OKX & Bybit)', items: [] },
-      eu_stock: { label: '🇮🇹 Azionario Italia (FTSE MIB & Mid Cap)', items: [] },
-      us_stock: { label: '🇺🇸 Azionario USA (S&P 500, NASDAQ-100 & Mid Cap)', items: [] },
-      commodities: { label: '🛢️ Materie Prime & Metalli (CME / ICE / LME)', items: [] },
-      forex: { label: '💱 Mercato Valutario (Forex Majors & Crosses)', items: [] },
-      etf: { label: '📊 ETF & Indici Benchmark', items: [] },
-      other: { label: '🌐 Altri Strumenti Finanziari', items: [] }
-    };
+    const visibleFavs = subFilter === 'all'
+      ? favAssets
+      : favAssets.filter(a => (fm && fm.classifyAssetGroup ? fm.classifyAssetGroup(a) : a.cat) === subFilter);
 
-    favAssets.forEach(a => {
-      const isCommodity = (a.cat === 'forex' || a.cat === 'commodities') && (
-        ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'ZN', 'NI', 'ZW', 'ZC', 'ZS', 'KC', 'CC', 'SB', 'CT', 'USOIL', 'BRENT', 'NATGAS', 'XAUUSD', 'XAGUSD'].includes(a.symbol) ||
-        (a.sector && (a.sector.includes('Metalli') || a.sector.includes('Energetici') || a.sector.includes('Soft Commodities') || a.sector.includes('Agricole')))
-      );
+    if (viewMode === 'total') {
+      container.innerHTML = toolbarHtml + `
+        <div style="font-size:10px; font-weight:800; color:#fcd535; text-transform:uppercase; padding:6px 10px; background:rgba(252,213,53,0.08); border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
+          <span>📋 LISTA UNICA TOTALE PREFERITI (${visibleFavs.length} TITOLI ATTIVI)</span>
+          <span>1s LIVE STREAM</span>
+        </div>
+      ` + visibleFavs.map(a => renderAssetRowHtml(a, true)).join('');
+      return;
+    }
 
-      if (isCommodity) {
-        groups.commodities.items.push(a);
-      } else if (groups[a.cat]) {
-        groups[a.cat].items.push(a);
-      } else {
-        groups.other.items.push(a);
-      }
+    // Divided by Typology view
+    const grouped = {};
+    Object.keys(groupMeta).forEach(k => { grouped[k] = []; });
+    visibleFavs.forEach(a => {
+      const gKey = fm && fm.classifyAssetGroup ? fm.classifyAssetGroup(a) : (a.cat || 'other');
+      if (grouped[gKey]) grouped[gKey].push(a);
+      else grouped.other.push(a);
     });
 
-    let html = '';
-    for (const key in groups) {
-      const g = groups[key];
-      if (g.items.length) {
-        html += `<div style="font-size:10px; font-weight:800; color:var(--accent); text-transform:uppercase; padding:6px 10px; background:rgba(255,215,0,0.06); border-bottom:1px solid var(--border);">${g.label}</div>`;
-        html += g.items.map(a => renderAssetRowHtml(a)).join('');
+    let html = toolbarHtml;
+    Object.keys(groupMeta).forEach(k => {
+      const items = grouped[k] || [];
+      if (items.length) {
+        html += `
+          <div style="font-size:10px; font-weight:800; color:var(--accent); text-transform:uppercase; padding:6px 10px; background:rgba(255,215,0,0.07); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <span>${groupMeta[k].label}</span>
+            <span style="color:#fcd535; font-family:var(--font-mono);">${items.length} Preferiti</span>
+          </div>
+        `;
+        html += items.map(a => renderAssetRowHtml(a, false)).join('');
       }
-    }
+    });
     container.innerHTML = html;
     return;
   }
 
-  container.innerHTML = assets.map(a => renderAssetRowHtml(a)).join('');
+  if (!assets.length) {
+    container.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-muted)">Nessun asset trovato. Tutti i 15 gruppi sono attivi: prova a cercare per simbolo, nome o mercato.</div>`;
+    return;
+  }
+
+  // 2. WHEN SEARCHING OR IN 'ALL' TAB: ALWAYS SHOW GROUP HEADERS SO ALL GROUPS ARE CLEARLY PRESENT
+  if (activeMegaCategory === 'all' || activeQuery.length > 0) {
+    const fm = window.FavoritesManager;
+    const grouped = {};
+    Object.keys(groupMeta).forEach(k => { grouped[k] = []; });
+    assets.forEach(a => {
+      const gKey = fm && fm.classifyAssetGroup ? fm.classifyAssetGroup(a) : (a.cat || 'other');
+      if (grouped[gKey]) grouped[gKey].push(a);
+      else grouped.other.push(a);
+    });
+
+    let html = '';
+    Object.keys(groupMeta).forEach(k => {
+      const items = grouped[k] || [];
+      if (items.length) {
+        html += `
+          <div style="font-size:10px; font-weight:800; color:#38bdf8; text-transform:uppercase; padding:6px 10px; background:rgba(56,189,248,0.08); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <span>${groupMeta[k].label}</span>
+            <a href="#preferiti-${k}" onclick="FavoritesManager.openFavoritesCategoryLink('${k}', event)" style="color:#fcd535; text-decoration:underline; font-size:9.5px; cursor:pointer;" title="Apri i Preferiti di questo gruppo">★ Vedi Preferiti Gruppo (${items.length} titoli)</a>
+          </div>
+        `;
+        html += items.map(a => renderAssetRowHtml(a, false)).join('');
+      }
+    });
+    container.innerHTML = html;
+    return;
+  }
+
+  container.innerHTML = assets.map(a => renderAssetRowHtml(a, true)).join('');
 }
 
-function renderAssetRowHtml(a) {
-  const isFav = window.FavoritesManager ? window.FavoritesManager.isFavorite(a.symbol) : false;
-  const curr = a.currency || '$';
-  const prec = a.precision || 2;
+function renderAssetRowHtml(a, showTypologyBadge = true) {
+  const fm = window.FavoritesManager;
+  const isFav = fm ? fm.isFavorite(a.symbol) : false;
+  const gKey = fm && fm.classifyAssetGroup ? fm.classifyAssetGroup(a) : (a.cat || 'other');
+  const curr = a.currency || (a.symbol && a.symbol.endsWith('.MI') ? '€' : '$');
+  const prec = a.precision || (window.getDynamicPrecision ? window.getDynamicPrecision(a.basePrice || 100, a.symbol) : 2);
   const priceStr = a.basePrice ? `${curr}${a.basePrice.toLocaleString(undefined, { minimumFractionDigits: prec, maximumFractionDigits: prec })}` : '';
+  const chgVal = a.change24h !== undefined ? a.change24h : 0;
+  const chgColor = chgVal >= 0 ? '#00f2a1' : '#f43f5e';
+  const chgStr = `${chgVal >= 0 ? '+' : ''}${Number(chgVal).toFixed(2)}%`;
 
   return `
     <div class="mega-asset-row" onclick="selectAsset('${a.symbol}')">
-      <button class="star-fav-btn ${isFav ? 'active' : ''}" onclick="FavoritesManager.toggleFavorite('${a.symbol}', event)" title="Aggiungi o rimuovi dai Preferiti">
+      <a href="#fav-${a.symbol}" role="button" data-fav-star-sym="${a.symbol}" class="star-fav-btn ${isFav ? 'active' : ''}" onclick="FavoritesManager.toggleFavorite('${a.symbol}', event)" title="${isFav ? 'Rimuovi dai Preferiti (Link Attivo)' : 'Aggiungi ai Preferiti (Link Attivo)'}" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:6px; border:1px solid ${isFav ? 'rgba(252,213,53,0.55)' : 'rgba(255,255,255,0.08)'}; background:${isFav ? 'rgba(252,213,53,0.15)' : 'rgba(255,255,255,0.03)'}; color:${isFav ? '#fcd535' : '#64748b'}; font-size:15px; flex-shrink:0; cursor:pointer;">
         ${isFav ? '★' : '☆'}
-      </button>
-      <div class="mega-asset-left" style="flex:1;">
-        <div style="display:flex; align-items:center; gap:6px;">
+      </a>
+      <div class="mega-asset-left" style="flex:1; min-width:0;">
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
           <span class="mega-asset-sym">${a.symbol}</span>
           <span style="font-size:9px; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px; color:var(--text-muted); font-family:var(--font-mono)">
             ${a.exchange || a.cat}
           </span>
+          ${showTypologyBadge ? `<a href="#fav-cat-${gKey}" onclick="FavoritesManager.openFavoritesCategoryLink('${gKey}', event)" style="font-size:8.5px; color:#38bdf8; background:rgba(56,189,248,0.1); padding:1px 5px; border-radius:3px; text-decoration:none; font-weight:700;" title="Filtra Preferiti per questa tipologia">${gKey.toUpperCase()}</a>` : ''}
         </div>
-        <span class="mega-asset-name">${a.name}</span>
+        <span class="mega-asset-name" style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${a.name}</span>
       </div>
-      <div class="mega-asset-right" style="text-align:right;">
-        <span data-mega-price="${a.symbol}" style="font-weight:700; color:#00f2a1; font-family:var(--font-mono); font-size:12px;">${priceStr}</span>
+      <div class="mega-asset-right" style="text-align:right; flex-shrink:0;">
+        <div data-mega-price="${a.symbol}" style="font-weight:800; color:#00f2a1; font-family:var(--font-mono); font-size:12px;">${priceStr}</div>
+        <div style="font-size:9.5px; font-weight:700; color:${chgColor}; font-family:var(--font-mono);">${chgStr}</div>
       </div>
     </div>
   `;
 }
 
 function filterMegaCategory(cat, tabBtn) {
-  activeMegaCategory = cat;
-  document.querySelectorAll('.mega-tab-pill').forEach(b => b.classList.remove('active'));
-  if (tabBtn) tabBtn.classList.add('active');
+  activeMegaCategory = cat || 'all';
+  window.activeMegaCategory = activeMegaCategory;
+  document.querySelectorAll('.mega-tab-pill').forEach(b => {
+    const bCat = b.getAttribute('data-mega-cat');
+    b.classList.toggle('active', b === tabBtn || (bCat && bCat === activeMegaCategory));
+  });
 
   const allAssets = window.GlobalMarketAssets || curatedAssets || [];
   let filtered = allAssets;
+  const fm = window.FavoritesManager;
 
   if (cat === 'favorites') {
-    const favs = window.FavoritesManager ? window.FavoritesManager.getFavorites() : [];
+    const favs = fm ? fm.getFavorites() : [];
     filtered = allAssets.filter(a => favs.includes(a.symbol));
   } else if (cat === 'sp500') {
-    filtered = allAssets.filter(a => a.cat === 'sp500' || a.cat === 'us_stock' || (a.sector && a.sector.includes('S&P')));
+    filtered = allAssets.filter(a => a.cat === 'sp500' || (a.cat === 'us_stock' && a.exchange === 'NYSE') || (a.sector && a.sector.includes('S&P')));
+    if (!filtered.length) filtered = allAssets.filter(a => a.cat === 'us_stock');
   } else if (cat === 'nasdaq') {
     filtered = allAssets.filter(a => a.cat === 'nasdaq' || a.exchange === 'NASDAQ' || (a.sector && a.sector.includes('NASDAQ')));
   } else if (cat === 'eu_stock') {
@@ -1098,8 +1230,8 @@ function filterMegaCategory(cat, tabBtn) {
   } else if (cat === 'asia_stock') {
     filtered = allAssets.filter(a => a.symbol.endsWith('.T') || a.symbol.endsWith('.KS') || a.symbol.endsWith('.HK') || a.symbol === 'TSM' || a.cat === 'asia_stock');
   } else if (cat === 'commodities') {
-    const commSyms = ['GC', 'SI', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'ZN', 'NI', 'ZW', 'ZC', 'ZS', 'KC', 'CC', 'SB', 'CT', 'GOLD', 'SILVER', 'USOIL', 'BRENT', 'NATGAS'];
-    filtered = allAssets.filter(a => commSyms.includes(a.symbol) || a.cat === 'commodities' || (a.sector && (a.sector.includes('Metalli') || a.sector.includes('Energetici') || a.sector.includes('Commodities') || a.sector.includes('Agricole'))));
+    const commSyms = ['GC', 'SI', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'ZN', 'NI', 'ZW', 'ZC', 'ZS', 'KC', 'CC', 'SB', 'CT', 'GOLD', 'SILVER', 'USOIL', 'BRENT', 'NATGAS', 'XAUUSD', 'XAGUSD'];
+    filtered = allAssets.filter(a => commSyms.includes(a.symbol) || a.cat === 'commodities' || (a.sector && (a.sector.includes('Metalli') || a.sector.includes('Energetici') || a.sector.includes('Commodities') || a.sector.includes('Agricole') || a.sector.includes('Preziosi'))));
   } else if (cat === 'forex') {
     const fxPairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD', 'EURGBP', 'EURJPY', 'GBPJPY', 'USDCNY', 'USDHKD', 'USDSGD'];
     filtered = allAssets.filter(a => fxPairs.includes(a.symbol) || (a.symbol.length === 6 && ['USD', 'EUR', 'GBP', 'JPY'].some(c => a.symbol.includes(c)) && !a.symbol.includes('USDT')));
@@ -1108,14 +1240,15 @@ function filterMegaCategory(cat, tabBtn) {
   } else if (cat === 'me_stock') {
     filtered = allAssets.filter(a => a.cat === 'me_stock' || a.symbol.endsWith('.SR') || a.symbol.endsWith('.AE') || a.symbol.endsWith('.QA') || a.symbol.endsWith('.KW'));
   } else if (cat === 'mid_cap') {
-    filtered = allAssets.filter(a => (a.sector && a.sector.toLowerCase().includes('mid cap')) || ['BRE.MI', 'DLG.MI', 'REY.MI', 'TGYM.MI', 'WBD.MI', 'MAIRE.MI', 'SFER.MI', 'SMCI', 'PLTR', 'HOOD', 'AML.L', 'MKS.L', 'EZJ.L'].includes(a.symbol));
+    filtered = allAssets.filter(a => (a.sector && (a.sector.toLowerCase().includes('mid cap') || a.sector.toLowerCase().includes('star'))) || ['BRE.MI', 'DLG.MI', 'YSY.MI', 'TNG.MI', 'WBD.MI', 'MAIRE.MI', 'SFER.MI', 'SMCI', 'PLTR', 'HOOD', 'AML.L', 'MKS.L', 'EZJ.L', 'GME', 'WING', 'DECK'].includes(a.symbol));
+  } else if (cat === 'etf') {
+    filtered = allAssets.filter(a => a.cat === 'etf' || a.cat === 'indices' || ['SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'GLD', 'TLT', 'FTSEMIB.MI', 'NAS100'].includes(a.symbol) || (a.sector && (a.sector.includes('ETF') || a.sector.includes('Indici'))));
   } else if (cat !== 'all') {
     filtered = allAssets.filter(a => a.cat === cat);
   }
 
   renderMegaAssetList(filtered);
 }
-
 let megaSearchTimer = null;
 function onMegaSearchInput(query) {
   clearTimeout(megaSearchTimer);
@@ -1238,17 +1371,27 @@ window.openBybitQuickAssetSearchModal = function() {
   function matchAssetCategory(a, cat) {
     if (!cat || cat === 'all') return true;
     const sym = (a.symbol || '').toUpperCase();
+    const fm = window.FavoritesManager;
+    if (cat === 'favorites') return fm ? fm.isFavorite(sym) : false;
     if (cat === 'crypto') return a.cat === 'crypto' || sym.endsWith('USDT');
     if (cat === 'eu_stock') return sym.endsWith('.MI') || a.cat === 'eu_stock';
-    if (cat === 'us_stock') return a.cat === 'us_stock' || a.cat === 'sp500' || a.cat === 'nasdaq' || a.exchange === 'NASDAQ' || a.exchange === 'NYSE';
-    if (cat === 'eu_intl') return sym.endsWith('.DE') || sym.endsWith('.PA') || sym.endsWith('.L') || ['de_stock', 'fr_stock', 'uk_stock'].includes(a.cat);
-    if (cat === 'asia_me') return sym.endsWith('.T') || sym.endsWith('.KS') || sym.endsWith('.HK') || sym.endsWith('.SR') || sym.endsWith('.AE') || sym.endsWith('.QA') || sym.endsWith('.KW') || ['asia_stock', 'me_stock'].includes(a.cat);
+    if (cat === 'sp500') return a.cat === 'sp500' || (a.cat === 'us_stock' && a.exchange === 'NYSE');
+    if (cat === 'nasdaq') return a.cat === 'nasdaq' || a.exchange === 'NASDAQ';
+    if (cat === 'fr_stock') return sym.endsWith('.PA') || a.cat === 'fr_stock';
+    if (cat === 'de_stock') return sym.endsWith('.DE') || a.cat === 'de_stock';
+    if (cat === 'uk_stock') return sym.endsWith('.L') || a.cat === 'uk_stock';
+    if (cat === 'asia_stock') return sym.endsWith('.T') || sym.endsWith('.KS') || sym.endsWith('.HK') || sym === 'TSM' || a.cat === 'asia_stock';
+    if (cat === 'me_stock') return sym.endsWith('.SR') || sym.endsWith('.AE') || sym.endsWith('.QA') || sym.endsWith('.KW') || a.cat === 'me_stock';
+    if (cat === 'mid_cap') return (a.sector && (a.sector.toLowerCase().includes('mid cap') || a.sector.toLowerCase().includes('star'))) || ['BRE.MI', 'DLG.MI', 'YSY.MI', 'TNG.MI', 'GME', 'WING', 'SMCI', 'PLTR'].includes(sym);
     if (cat === 'commodities') {
-      const commSyms = ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'ZN', 'NI', 'ZW', 'ZC', 'ZS', 'KC', 'CC', 'SB', 'CT'];
+      const commSyms = ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'ZN', 'NI', 'ZW', 'ZC', 'ZS', 'KC', 'CC', 'SB', 'CT', 'XAUUSD', 'XAGUSD'];
       return commSyms.includes(sym) || a.cat === 'commodities' || (a.sector && (a.sector.includes('Metalli') || a.sector.includes('Energetici') || a.sector.includes('Commodities') || a.sector.includes('Agricole')));
     }
     if (cat === 'forex') {
-      return a.cat === 'forex' && (sym.length === 6 && !sym.endsWith('USDT'));
+      return a.cat === 'forex' || (sym.length === 6 && !sym.endsWith('USDT') && ['USD', 'EUR', 'GBP', 'JPY'].some(c => sym.includes(c)));
+    }
+    if (cat === 'etf') {
+      return a.cat === 'etf' || a.cat === 'indices' || ['SPY', 'QQQ', 'IWM', 'DIA', 'GLD', 'TLT'].includes(sym);
     }
     return a.cat === cat;
   }
@@ -1258,7 +1401,7 @@ window.openBybitQuickAssetSearchModal = function() {
     const allAssets = getCatalog();
     const filtered = allAssets.filter(a => {
       const matchCat = matchAssetCategory(a, window._bybitSearchFilterCat);
-      const matchText = !q || a.symbol.toLowerCase().includes(q) || (a.name && a.name.toLowerCase().includes(q)) || (a.exchange && a.exchange.toLowerCase().includes(q));
+      const matchText = !q || a.symbol.toLowerCase().includes(q) || (a.name && a.name.toLowerCase().includes(q)) || (a.exchange && a.exchange.toLowerCase().includes(q)) || (a.sector && a.sector.toLowerCase().includes(q));
       return matchCat && matchText;
     });
 
@@ -1270,6 +1413,7 @@ window.openBybitQuickAssetSearchModal = function() {
 
     listContainer.innerHTML = filtered.map(a => {
       const isCurrent = a.symbol === window.currentSymbol;
+      const isFav = window.FavoritesManager ? window.FavoritesManager.isFavorite(a.symbol) : false;
       const curr = a.currency || ((a.symbol.endsWith('.MI') || a.cat === 'eu_stock') ? '€' : '$');
       const pVal = a.basePrice || a.price || 100;
       const prec = window.getDynamicPrecision ? window.getDynamicPrecision(pVal, a.symbol) : (a.precision || 2);
@@ -1280,6 +1424,7 @@ window.openBybitQuickAssetSearchModal = function() {
       return `
         <div class="bybit-search-row ${isCurrent ? 'active' : ''}" data-modal-sym="${a.symbol}" onclick="selectAsset('${a.symbol}'); closeBybitQuickAssetSearchModal();">
           <div style="display:flex; align-items:center; gap:10px;">
+            <a href="#fav-modal-${a.symbol}" role="button" data-fav-star-sym="${a.symbol}" onclick="FavoritesManager.toggleFavorite('${a.symbol}', event)" title="Salva/Rimuovi nei Preferiti (Link Attivo)" style="text-decoration:none; font-size:16px; color:${isFav ? '#fcd535' : '#64748b'}; padding:2px 6px; border-radius:5px; border:1px solid ${isFav ? 'rgba(252,213,53,0.5)' : 'rgba(255,255,255,0.1)'}; background:${isFav ? 'rgba(252,213,53,0.14)' : 'rgba(255,255,255,0.03)'};">${isFav ? '★' : '☆'}</a>
             <div class="bybit-search-badge">${(a.exchange || a.cat || 'MKT').substring(0, 10).toUpperCase()}</div>
             <div>
               <div style="font-size:13px; font-weight:800; color:#fff;">${a.symbol} ${isCurrent ? '<span style="color:#00f2a1; font-size:10px;">● IN DIRETTA 1s</span>' : ''}</div>
@@ -1297,31 +1442,39 @@ window.openBybitQuickAssetSearchModal = function() {
   window._renderBybitQuickModalList = renderList;
 
   const totalCount = getCatalog().length;
+  const favCount = window.FavoritesManager ? window.FavoritesManager.getFavorites().length : 0;
   modal.innerHTML = `
-    <div class="bybit-search-modal-box" style="max-width:640px; width:95vw; max-height:86vh;" onclick="event.stopPropagation()">
+    <div class="bybit-search-modal-box" style="max-width:720px; width:95vw; max-height:86vh;" onclick="event.stopPropagation()">
       <div class="bybit-search-modal-header">
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:16px;">🔍⚡</span>
-          <span style="font-size:14px; font-weight:900; color:#fff;">Terminale Globale Titoli —Tutti i ${totalCount} Mercati Live al Secondo</span>
+          <span style="font-size:14px; font-weight:900; color:#fff;">Terminale Globale Titoli — Tutti i 15 Gruppi & ${totalCount} Mercati Live al Secondo</span>
         </div>
         <span id="bybit-search-count-lbl" style="font-size:10.5px; color:#00f2a1; font-weight:800;">${totalCount} Titoli Attivi</span>
         <button class="bybit-search-close-btn" onclick="closeBybitQuickAssetSearchModal()">✕</button>
       </div>
 
       <div style="padding:10px 14px; border-bottom:1px solid #1e293b;">
-        <input type="text" id="bybit-search-input" class="bybit-search-input" placeholder="Cerca qualsiasi titolo: UCG.MI, ENEL.MI, ISP.MI, BTC, NVDA, AAPL, GC, EURUSD, SAP.DE..." autofocus autocomplete="off">
+        <input type="text" id="bybit-search-input" class="bybit-search-input" placeholder="Cerca qualsiasi titolo su tutti i 15 gruppi: UCG.MI, ENEL.MI, BTC, NVDA, GC, EURUSD, SAP.DE..." autofocus autocomplete="off">
       </div>
 
       <div class="bybit-search-cats-bar" style="display:flex; flex-wrap:wrap; gap:4px; padding:8px 12px;">
         ${[
+          { id: 'favorites', label: '⭐ Preferiti (' + favCount + ')' },
           { id: 'all', label: '🌐 Tutti (' + totalCount + ')' },
+          { id: 'crypto', label: '🪙 Cripto' },
           { id: 'eu_stock', label: '🇮🇹 Borsa Italiana' },
-          { id: 'crypto', label: '🪙 Cripto Perp' },
-          { id: 'us_stock', label: '🇺🇸 USA S&P/Nasdaq' },
-          { id: 'eu_intl', label: '🇪🇺 DAX / CAC / UK' },
-          { id: 'asia_me', label: '🇯🇵🇸🇦 Asia & M.O.' },
+          { id: 'sp500', label: '🇺🇸 S&P 500' },
+          { id: 'nasdaq', label: '⚡ Nasdaq-100' },
+          { id: 'fr_stock', label: '🇫🇷 CAC 40' },
+          { id: 'de_stock', label: '🇩🇪 DAX 40' },
+          { id: 'uk_stock', label: '🇬🇧 FTSE 100' },
+          { id: 'asia_stock', label: '🇯🇵 Asia / Orientale' },
+          { id: 'me_stock', label: '🇸🇦 Mediorientale' },
+          { id: 'mid_cap', label: '🇮🇹🇺🇸 Mid-Cap' },
           { id: 'commodities', label: '🛢️ Materie Prime' },
-          { id: 'forex', label: '💱 Forex' }
+          { id: 'forex', label: '💱 Forex' },
+          { id: 'etf', label: '📊 ETF & Indici' }
         ].map(c => `
           <button class="bybit-search-cat-btn ${c.id === window._bybitSearchFilterCat ? 'active' : ''}" data-cat="${c.id}">
             ${c.label}
@@ -1332,7 +1485,6 @@ window.openBybitQuickAssetSearchModal = function() {
       <div id="bybit-search-results-list" class="bybit-search-results-list" style="max-height:58vh; overflow-y:auto;"></div>
     </div>
   `;
-
   modal.style.display = 'flex';
   modal.onclick = closeBybitQuickAssetSearchModal;
 
@@ -4435,7 +4587,11 @@ class RealTime1sLedgerAndLateralChartV25 {
       ctx.restore();
     };
 
-    // 3. Draw SL, Breakeven, Entry, TP1 (40%), TP2 (40%), TP3 (20% Final)
+    // 3. Draw Liquidation, SL, Breakeven, Entry, TP1 (40%), TP2 (40%), TP3 (20% Final)
+    const lev = Math.max(1, parseFloat(op.leverage) || 5);
+    const liqDist = 1 / Math.max(1.2, lev);
+    const liqPrice = +(op.side === 'SHORT' ? op.entryPrice * (1 + liqDist * 0.9) : op.entryPrice * (1 - liqDist * 0.9)).toFixed(op.entryPrice > 500 ? 2 : 2);
+    drawHorizontalLevel(liqPrice, `⚡ LIQ ${liqPrice} (${lev}x)`, "#c084fc", "rgba(192,132,252,0.18)", true);
     drawHorizontalLevel(op.stopLossPrice, `SL ${op.stopLossPrice} (-${m.stopRiskEur.toFixed(2)}€)`, "#f87171", "rgba(239,68,68,0.18)", true);
     const bePrice = +(op.entryPrice * 1.0015).toFixed(op.entryPrice > 500 ? 2 : 2);
     drawHorizontalLevel(bePrice, `BE +0.15% (${bePrice})`, "#fbbf24", "rgba(245,158,11,0.15)", true);

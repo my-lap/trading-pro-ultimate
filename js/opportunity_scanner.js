@@ -335,20 +335,27 @@ window.OpportunityScanner = {
   applyFiltersAndSort: function() {
     let list = [...this.allOpportunities];
 
-    // Category Filter
+    // Category Filter (Supports Favorites + All 15 Institutional Asset Groups)
     if (this.currentFilterCat !== 'all') {
-      if (this.currentFilterCat === 'top_score') {
+      const fm = window.FavoritesManager;
+      if (this.currentFilterCat === 'favorites') {
+        list = list.filter(o => fm && fm.isFavorite(o.symbol));
+      } else if (this.currentFilterCat === 'top_score') {
         list = list.filter(o => o.score >= 88);
       } else if (this.currentFilterCat === 'crypto') {
-        list = list.filter(o => o.category === 'crypto');
-      } else if (this.currentFilterCat === 'italy') {
-        list = list.filter(o => o.category === 'italy' || o.symbol.endsWith('.MI'));
+        list = list.filter(o => o.category === 'crypto' || o.symbol.endsWith('USDT'));
+      } else if (this.currentFilterCat === 'italy' || this.currentFilterCat === 'eu_stock') {
+        list = list.filter(o => o.category === 'italy' || o.category === 'eu_stock' || o.symbol.endsWith('.MI'));
       } else if (this.currentFilterCat === 'us') {
-        list = list.filter(o => o.category === 'us_tech' || o.category === 'us_sp500' || (!o.symbol.includes('.MI') && !o.symbol.includes('USDT') && o.category !== 'forex'));
+        list = list.filter(o => o.category === 'us_tech' || o.category === 'us_sp500' || o.category === 'us_stock' || o.category === 'sp500' || o.category === 'nasdaq' || (!o.symbol.includes('.') && !o.symbol.includes('USDT') && o.category !== 'forex'));
+      } else if (this.currentFilterCat === 'eu_intl') {
+        list = list.filter(o => o.symbol.endsWith('.PA') || o.symbol.endsWith('.DE') || o.symbol.endsWith('.L') || ['fr_stock', 'de_stock', 'uk_stock'].includes(o.category));
+      } else if (this.currentFilterCat === 'asia_me') {
+        list = list.filter(o => o.symbol.endsWith('.T') || o.symbol.endsWith('.KS') || o.symbol.endsWith('.HK') || o.symbol.endsWith('.SR') || o.symbol.endsWith('.AE') || o.symbol.endsWith('.QA') || ['asia_stock', 'me_stock'].includes(o.category));
       } else if (this.currentFilterCat === 'forex') {
         list = list.filter(o => o.category === 'forex' && (o.symbol.length === 6 || o.symbol.includes('/')));
       } else if (this.currentFilterCat === 'commodities') {
-        list = list.filter(o => ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'COPPER'].includes(o.symbol) || (o.sector && (o.sector.includes('Preziosi') || o.sector.includes('Energetici'))));
+        list = list.filter(o => ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'COPPER', 'XAUUSD', 'XAGUSD'].includes(o.symbol) || o.category === 'commodities' || (o.sector && (o.sector.includes('Preziosi') || o.sector.includes('Energetici') || o.sector.includes('Metalli'))));
       }
     }
 
@@ -473,27 +480,36 @@ window.OpportunityScanner = {
 
         <!-- TOOLBAR: CATEGORY PILLS, SETUP SELECTOR, SEARCH -->
         <div class="radar-toolbar">
-          <div class="radar-categories-track">
+          <div class="radar-categories-track" style="display:flex; flex-wrap:wrap; gap:5px;">
+            <button class="radar-cat-pill ${this.currentFilterCat === 'favorites' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('favorites', this)">
+              ⭐ Preferiti (${window.FavoritesManager ? window.FavoritesManager.getFavorites().length : 0})
+            </button>
             <button class="radar-cat-pill ${this.currentFilterCat === 'all' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('all', this)">
               🌐 Tutti (${totalCount})
             </button>
             <button class="radar-cat-pill ${this.currentFilterCat === 'top_score' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('top_score', this)">
-              ⭐ Top Score (${highConfCount})
+              🔥 Top Score (${highConfCount})
             </button>
             <button class="radar-cat-pill ${this.currentFilterCat === 'italy' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('italy', this)">
               🇮🇹 Borsa Italiana
             </button>
             <button class="radar-cat-pill ${this.currentFilterCat === 'us' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('us', this)">
-              🇺🇸 USA / Tech
+              🇺🇸 S&P 500 & Nasdaq
+            </button>
+            <button class="radar-cat-pill ${this.currentFilterCat === 'eu_intl' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('eu_intl', this)">
+              🇪🇺 DAX / CAC / FTSE
+            </button>
+            <button class="radar-cat-pill ${this.currentFilterCat === 'asia_me' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('asia_me', this)">
+              🇯🇵🇸🇦 Asia & M.O.
             </button>
             <button class="radar-cat-pill ${this.currentFilterCat === 'crypto' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('crypto', this)">
               🪙 Criptovalute
             </button>
-            <button class="radar-cat-pill ${this.currentFilterCat === 'forex' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('forex', this)">
-              💱 Forex
-            </button>
             <button class="radar-cat-pill ${this.currentFilterCat === 'commodities' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('commodities', this)">
               🛢️ Materie Prime
+            </button>
+            <button class="radar-cat-pill ${this.currentFilterCat === 'forex' ? 'active' : ''}" onclick="OpportunityScanner.setCategoryFilter('forex', this)">
+              💱 Forex
             </button>
           </div>
 
@@ -561,6 +577,7 @@ window.OpportunityScanner = {
         <div class="opp-card-header">
           <div class="opp-card-title-group">
             <div style="display:flex; align-items:center; gap:8px;">
+              <a href="#fav-${o.symbol}" role="button" data-fav-star-sym="${o.symbol}" onclick="FavoritesManager.toggleFavorite('${o.symbol}', event)" title="Salva/Rimuovi nei Preferiti (Link Attivo)" style="text-decoration:none; font-size:16px; color:${window.FavoritesManager && window.FavoritesManager.isFavorite(o.symbol) ? '#fcd535' : '#64748b'}; cursor:pointer;">${window.FavoritesManager && window.FavoritesManager.isFavorite(o.symbol) ? '★' : '☆'}</a>
               <span class="opp-sym-ticker">${o.symbol}</span>
               <span class="${sideClass}">${sideSymbol}</span>
               <span class="opp-tf-pill">${o.timeframe}</span>
@@ -671,14 +688,21 @@ window.OpportunityScanner = {
 
     let candidates = [...this.allOpportunities];
     if (this.quickFilterCat !== 'all') {
-      if (this.quickFilterCat === 'italy') {
-        candidates = candidates.filter(o => o.category === 'italy' || o.symbol.endsWith('.MI'));
+      const fm = window.FavoritesManager;
+      if (this.quickFilterCat === 'favorites') {
+        candidates = candidates.filter(o => fm && fm.isFavorite(o.symbol));
+      } else if (this.quickFilterCat === 'italy') {
+        candidates = candidates.filter(o => o.category === 'italy' || o.category === 'eu_stock' || o.symbol.endsWith('.MI'));
       } else if (this.quickFilterCat === 'crypto') {
-        candidates = candidates.filter(o => o.category === 'crypto');
+        candidates = candidates.filter(o => o.category === 'crypto' || o.symbol.endsWith('USDT'));
       } else if (this.quickFilterCat === 'us') {
-        candidates = candidates.filter(o => o.category === 'us_tech' || o.category === 'us_sp500' || (!o.symbol.includes('.MI') && !o.symbol.includes('USDT') && o.category !== 'forex'));
+        candidates = candidates.filter(o => o.category === 'us_tech' || o.category === 'us_sp500' || o.category === 'us_stock' || (!o.symbol.includes('.') && !o.symbol.includes('USDT') && o.category !== 'forex'));
+      } else if (this.quickFilterCat === 'eu_intl') {
+        candidates = candidates.filter(o => o.symbol.endsWith('.PA') || o.symbol.endsWith('.DE') || o.symbol.endsWith('.L') || ['fr_stock', 'de_stock', 'uk_stock'].includes(o.category));
+      } else if (this.quickFilterCat === 'asia_me') {
+        candidates = candidates.filter(o => o.symbol.endsWith('.T') || o.symbol.endsWith('.KS') || o.symbol.endsWith('.HK') || o.symbol.endsWith('.SR') || o.symbol.endsWith('.AE') || ['asia_stock', 'me_stock'].includes(o.category));
       } else if (this.quickFilterCat === 'commodities') {
-        candidates = candidates.filter(o => ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'COPPER'].includes(o.symbol) || (o.sector && (o.sector.includes('Preziosi') || o.sector.includes('Energetici'))));
+        candidates = candidates.filter(o => ['GC', 'SI', 'PL', 'PA', 'CL', 'BRN', 'NG', 'RB', 'HO', 'HG', 'ALI', 'COPPER', 'XAUUSD'].includes(o.symbol) || o.category === 'commodities' || (o.sector && (o.sector.includes('Preziosi') || o.sector.includes('Energetici'))));
       } else if (this.quickFilterCat === 'forex') {
         candidates = candidates.filter(o => o.category === 'forex' && (o.symbol.length === 6 || o.symbol.includes('/')));
       }
@@ -710,28 +734,33 @@ window.OpportunityScanner = {
           </div>
         </div>
 
-        <!-- ROW 2: CATEGORY FILTER PILLS -->
-        <div class="quick-radar-filter-bar">
+        <!-- ROW 2: CATEGORY FILTER PILLS (ALL GROUPS + FAVORITES) -->
+        <div class="quick-radar-filter-bar" style="display:flex; flex-wrap:wrap; gap:4px;">
+          <button class="qr-cat-pill ${cat === 'favorites' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('favorites', this)">⭐ Preferiti</button>
           <button class="qr-cat-pill ${cat === 'all' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('all', this)">🌐 Tutti</button>
           <button class="qr-cat-pill ${cat === 'italy' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('italy', this)">🇮🇹 Borsa Italiana</button>
           <button class="qr-cat-pill ${cat === 'crypto' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('crypto', this)">🪙 Cripto</button>
-          <button class="qr-cat-pill ${cat === 'us' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('us', this)">🇺🇸 USA / Tech</button>
+          <button class="qr-cat-pill ${cat === 'us' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('us', this)">🇺🇸 S&P / Nasdaq</button>
+          <button class="qr-cat-pill ${cat === 'eu_intl' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('eu_intl', this)">🇪🇺 DAX/CAC/UK</button>
+          <button class="qr-cat-pill ${cat === 'asia_me' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('asia_me', this)">🇯🇵🇸🇦 Asia & M.O.</button>
           <button class="qr-cat-pill ${cat === 'commodities' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('commodities', this)">🛢️ Materie Prime</button>
           <button class="qr-cat-pill ${cat === 'forex' ? 'active' : ''}" onclick="OpportunityScanner.filterQuickRadar('forex', this)">💱 Forex</button>
         </div>
 
-        <!-- ROW 3: HORIZONTAL SWIPEABLE TOUCH PILLS (CAN NEVER BE SQUEEZED TO 0!) -->
+        <!-- ROW 3: HORIZONTAL SWIPEABLE TOUCH PILLS -->
         <div class="quick-radar-scroll" id="quick-radar-scroll-track">
           ${topOpps.length === 0 ? `
             <div style="padding:10px; font-size:11px; color:var(--text-muted);">Nessun setup per questa categoria. Seleziona "Tutti".</div>
           ` : topOpps.map(o => {
             const isLong = o.side === 'LONG';
+            const isFav = window.FavoritesManager ? window.FavoritesManager.isFavorite(o.symbol) : false;
             const chgSign = o.change24h >= 0 ? '+' : '';
             const chgColor = o.change24h >= 0 ? '#00f2a1' : '#f43f5e';
             return `
               <div class="quick-radar-pill ${isLong ? 'is-long' : 'is-short'}" onclick="OpportunityScanner.openOnChart('${o.symbol}', '${o.timeframe}')">
                 <div class="qr-pill-left">
-                  <div class="qr-pill-header">
+                  <div class="qr-pill-header" style="display:flex; align-items:center; gap:4px;">
+                    <a href="#fav-qr-${o.symbol}" role="button" data-fav-star-sym="${o.symbol}" onclick="FavoritesManager.toggleFavorite('${o.symbol}', event)" title="Preferito (Link Attivo)" style="text-decoration:none; color:${isFav ? '#fcd535' : '#64748b'}; font-size:13px;">${isFav ? '★' : '☆'}</a>
                     <span class="qr-pill-sym">${o.symbol}</span>
                     <span class="qr-side-tag ${isLong ? 'side-long' : 'side-short'}">${isLong ? '▲ LONG' : '▼ SHORT'}</span>
                   </div>

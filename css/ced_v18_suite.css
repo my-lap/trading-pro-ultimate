@@ -937,14 +937,83 @@ body.tpu-layout-landscape-split #main-terminal-body,
   letter-spacing: 0.3px !important;
 }
 
-/* ENSURE MEGA ASSET DROPDOWN & CHAPTER MENUS ARE NEVER CLIPPED */
+/* ENSURE MEGA ASSET DROPDOWN & CHAPTER MENUS ARE NEVER CLIPPED AND ALL GROUPS WRAP CLEANLY */
 .active-asset-bar {
   overflow: visible !important;
   z-index: 500 !important;
 }
 
-#asset-mega-dropdown.mega-asset-dropdown {
+#asset-mega-dropdown.mega-asset-dropdown,
+.dropdown-menu.mega-asset-dropdown {
   z-index: 999999 !important;
+  width: min(720px, 95vw) !important;
+  max-width: 95vw !important;
+  padding: 12px !important;
+  box-sizing: border-box !important;
+}
+
+.mega-tabs {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 5px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+  padding-bottom: 8px !important;
+  margin-bottom: 8px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.mega-tab-pill {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  border-radius: 6px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(15, 23, 42, 0.85) !important;
+  color: #cbd5e1 !important;
+}
+
+.mega-tab-pill.active {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.28), rgba(56, 189, 248, 0.22)) !important;
+  border-color: #f59e0b !important;
+  color: #fbbf24 !important;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3) !important;
+}
+
+.mega-asset-list {
+  max-height: min(460px, 60vh) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.star-fav-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+  font-size: 16px !important;
+  min-width: 26px !important;
+  min-height: 26px !important;
+  border-radius: 5px !important;
+  filter: none !important;
+  color: #64748b !important;
+  transition: transform 0.15s ease, color 0.15s ease, background 0.15s ease !important;
+}
+
+.star-fav-btn:hover {
+  transform: scale(1.22) !important;
+  color: #fde047 !important;
+  background: rgba(245, 158, 11, 0.16) !important;
+}
+
+.star-fav-btn.active {
+  color: #ffd700 !important;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.75) !important;
 }
 
 /* TOP MONITOR CONTROL BAR: FULL BRAND NAME VISIBILITY ON IPHONE & PC */
