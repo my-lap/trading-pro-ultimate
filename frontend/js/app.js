@@ -4527,8 +4527,124 @@ class RealTime1sLedgerAndLateralChartV25 {
 
 window.RealTime1sLedgerAndLateralChartV25 = RealTime1sLedgerAndLateralChartV25;
 window.RealTimeLedgerV25 = new RealTime1sLedgerAndLateralChartV25();
+
+/* ============================================================================
+   HOTFIX v25.1 — PC HEADER ZERO-OVERLAP & RIGHT BUTTON VISIBILITY ENFORCER
+   ============================================================================ */
+function applyPCHeaderZeroOverlapHotfixV25_1() {
+  if (!document.getElementById("tpu-v25-1-zero-overlap-style")) {
+    const st = document.createElement("style");
+    st.id = "tpu-v25-1-zero-overlap-style";
+    st.textContent = `
+      @media screen and (min-width: 769px) {
+        #cbMonitorControlBarV18 {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: center !important;
+          justify-content: space-between !important;
+          gap: 6px 8px !important;
+          height: auto !important;
+          min-height: 42px !important;
+          padding: 6px 14px !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+          overflow: visible !important;
+        }
+        header.terminal-header, .terminal-header {
+          position: relative !important;
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: center !important;
+          justify-content: flex-start !important;
+          gap: 6px 8px !important;
+          height: auto !important;
+          min-height: 44px !important;
+          padding: 6px 14px !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+          overflow: visible !important;
+        }
+        .terminal-header .brand-box {
+          position: static !important;
+          transform: none !important;
+          flex: 0 0 auto !important;
+          width: auto !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          margin-right: 4px !important;
+        }
+        .terminal-header .institutional-site-logo {
+          height: 28px !important;
+          width: 28px !important;
+          min-width: 28px !important;
+          border-radius: 6px !important;
+          object-fit: cover !important;
+          flex-shrink: 0 !important;
+        }
+        .terminal-header .brand-text-wrap,
+        .terminal-header .brand-title,
+        .terminal-header .brand-subtitle,
+        .terminal-header .brand-author-badge {
+          display: none !important;
+        }
+        .terminal-header .chapters-nav-desktop,
+        .terminal-header .header-right-actions {
+          position: static !important;
+          transform: none !important;
+          left: auto !important;
+          right: auto !important;
+          top: auto !important;
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: center !important;
+          justify-content: flex-start !important;
+          gap: 6px !important;
+          margin-left: 0 !important;
+          width: auto !important;
+          min-width: 0 !important;
+          overflow: visible !important;
+        }
+        .terminal-header .header-right-actions .btn,
+        .terminal-header .header-right-actions .btn-secondary {
+          display: inline-flex !important;
+          flex-shrink: 0 !important;
+          white-space: nowrap !important;
+        }
+      }
+      .drawer-header-bar,
+      .ced-subheader-bar,
+      .sala-ced-header-row {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 8px 12px !important;
+        padding: 8px 16px !important;
+        height: auto !important;
+        min-height: 42px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+      }
+      .drawer-header-right,
+      .btn-drawer-close {
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+        margin-left: auto !important;
+      }
+    `;
+    document.head.appendChild(st);
+  }
+}
+
+applyPCHeaderZeroOverlapHotfixV25_1();
 document.addEventListener("DOMContentLoaded", () => {
+  applyPCHeaderZeroOverlapHotfixV25_1();
   setTimeout(() => {
+    applyPCHeaderZeroOverlapHotfixV25_1();
     if (window.RealTimeLedgerV25) {
       window.RealTimeLedgerV25.renderAllContainers();
     }
