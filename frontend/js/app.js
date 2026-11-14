@@ -4333,7 +4333,7 @@ class RealTime1sLedgerAndLateralChartV25 {
               <canvas id="lateralExecutionChartV25-${suffix}" class="v25-lateral-chart-canvas" style="width:100%; height:100%; display:block;"></canvas>
             </div>
 
-            <!-- Visual Graduated Progress Cursor (SL 0% <--- [Current X%] ---> 100% Target Closure) -->
+            <!-- Visual Graduated Progress Cursor -->
             <div style="margin-top:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:7px; padding:6px 9px;">
               <div style="display:flex; justify-content:space-between; font-size:9.5px; font-family:var(--font-mono); font-weight:800; margin-bottom:4px;">
                 <span style="color:#f87171;">🛑 SL (${selOp.stopLossPrice} / -${selM.stopRiskEur.toFixed(2)} €)</span>

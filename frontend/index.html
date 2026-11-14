@@ -28,7 +28,7 @@
   <!-- SAFE APP VERSION & PASSIVE CACHE PURGER (CRASH-FREE FOR SAFARI & WINDOWS 10) -->
   <script>
     (function() {
-      var CURR_VERSION = '25.1.0';
+      var CURR_VERSION = '25.2.0';
       try {
         var savedVer = localStorage.getItem('TPU_APP_VERSION');
         if (savedVer !== CURR_VERSION) {
@@ -582,11 +582,12 @@
       </div>
 
       <!-- MOBILE VIEW SWITCHER (VISIBLE ON TABLETS/SMARTPHONES) -->
-      <div class="mobile-view-switcher">
+      <div class="mobile-view-switcher" style="grid-template-columns: repeat(5, 1fr);">
         <button class="m-view-btn active" onclick="switchMobileTerminalView('chart', this)">📊 Grafico</button>
         <button class="m-view-btn" onclick="switchMobileTerminalView('book', this)">📖 Book</button>
         <button class="m-view-btn" onclick="switchMobileTerminalView('order', this)">⚡ Ordine</button>
         <button class="m-view-btn" onclick="switchMobileTerminalView('positions', this)">📜 Posizioni</button>
+        <button class="m-view-btn" style="border-color:#00f2a1; color:#00f2a1; font-weight:900; background:rgba(0,242,161,0.14);" onclick="switchMobileTerminalView('ledger1s', this)">📟 Campo 1s</button>
       </div>
 
       <!-- QUICK OPPORTUNITY RADAR DOCK (MONITORAGGIO MULTI-MERCATO RAPIDO) -->
@@ -3435,13 +3436,13 @@
   <script src="js/casario_quant_engine.js?v=2.9.5"></script>
   <script src="js/quant_engines.js?v=2.9.0"></script>
   <script src="js/sector_rotation.js?v=2.9.0"></script>
-  <script src="js/optimal_engine.js?v=2.9.0"></script>
-  <script src="js/opportunity_scanner.js?v=2.9.0"></script>
-  <script src="js/skills.js?v=2.9.0"></script>
-  <script src="js/trading.js?v=2.9.0"></script>
-  <script src="js/journal.js?v=2.9.0"></script>
-  <script src="js/alerts.js?v=2.9.0"></script>
-  <script src="js/app.js?v=2.9.5"></script>
+  <script src="js/optimal_engine.js?v=25.2"></script>
+  <script src="js/opportunity_scanner.js?v=25.2"></script>
+  <script src="js/skills.js?v=25.2"></script>
+  <script src="js/trading.js?v=25.2"></script>
+  <script src="js/journal.js?v=25.2"></script>
+  <script src="js/alerts.js?v=25.2"></script>
+  <script src="js/app.js?v=25.2"></script>
 
   <script>
     // Bybit Subtabs Switcher (Grafico, Panoramica, Dati, Alimentazione)
@@ -3503,12 +3504,22 @@
       const bookCol = document.getElementById('bb-col-book');
       const orderCol = document.getElementById('bb-col-order');
       const posDock = document.getElementById('bb-col-positions');
+      const ledgerDock = document.getElementById('v25-ledger-main-dock');
 
       if (window.innerWidth <= 1024 || window.innerHeight <= 550) {
         if (chartCol) chartCol.style.display = viewKey === 'chart' ? 'block' : 'none';
         if (bookCol) bookCol.style.display = viewKey === 'book' ? 'flex' : 'none';
         if (orderCol) orderCol.style.display = viewKey === 'order' ? 'block' : 'none';
-        if (posDock) posDock.style.display = viewKey === 'positions' ? 'block' : 'none';
+        if (posDock) posDock.style.display = (viewKey === 'positions' || viewKey === 'ledger1s') ? 'block' : 'none';
+        if (ledgerDock) {
+          ledgerDock.style.display = 'block';
+          if (viewKey === 'ledger1s' || viewKey === 'positions') {
+            if (window.RealTimeLedgerV25) window.RealTimeLedgerV25.renderAllContainers();
+            setTimeout(() => {
+              ledgerDock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
+          }
+        }
 
         if (viewKey === 'chart' && window.mainChart) {
           setTimeout(() => {
