@@ -28,7 +28,7 @@
   <!-- SAFE APP VERSION & PASSIVE CACHE PURGER (CRASH-FREE FOR SAFARI & WINDOWS 10) -->
   <script>
     (function() {
-      var CURR_VERSION = '24.0.0';
+      var CURR_VERSION = '25.0.0';
       try {
         var savedVer = localStorage.getItem('TPU_APP_VERSION');
         if (savedVer !== CURR_VERSION) {
@@ -65,23 +65,23 @@
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   
   <!-- Terminal Stylesheet -->
-  <link rel="stylesheet" href="css/terminal.css?v=24.0">
+  <link rel="stylesheet" href="css/terminal.css?v=25.0">
   <link rel="stylesheet" href="css/master-suite.css?v=4">
 
   <link rel="stylesheet" href="css/supreme-suite.css">
   <link rel="stylesheet" href="css/portfolio.css">
   <link rel="stylesheet" href="css/news_newspaper.css">
   <link rel="stylesheet" href="css/cavaliere_memo.css">
-  <link rel="stylesheet" href="css/responsive_11_rules.css?v=24.0">
+  <link rel="stylesheet" href="css/responsive_11_rules.css?v=25.0">
   <link rel="stylesheet" href="css/charts_3d_depth.css">
-  <link rel="stylesheet" href="css/ced_v18_suite.css?v=24.0">
+  <link rel="stylesheet" href="css/ced_v18_suite.css?v=25.0">
 </head>
 <body>
   <!-- TOP MONITOR CONTROL BAR v18.0 (12 MONITOR THEMES + ERGONOMIC TOUCH-FIRST + 0°/90° LAYOUT) -->
   <div id="cbMonitorControlBarV18">
     <div class="cb-bar-left">
       <span class="cb-badge-title">👑📈 TRADING PRO ULTIMATE™</span>
-      <span class="cb-badge-version">v24.0 MASTER</span>
+      <span class="cb-badge-version">v25.0 MASTER</span>
     </div>
     <div class="cb-bar-center">
       <select id="tpuThemeSelectV18" class="cb-theme-select" onchange="window.TPUCEDMaster && window.TPUCEDMaster.applyTheme(this.value)" title="Seleziona Colore Monitor">
@@ -119,6 +119,9 @@
       </button>
       <button type="button" class="cb-btn" style="background:linear-gradient(135deg,#0284c7,#38bdf8); color:#000; font-weight:900; border:1px solid #7dd3fc;" onclick="window.BasketTimingEngineV23 && window.BasketTimingEngineV23.openModal()" title="Ripartizione % Paniere 348+ Titoli & Condizionatore Tempo Inter-Operazione (1s➔4h)">
         🥧⏱️ Paniere &amp; Δt (1s➔4h)
+      </button>
+      <button type="button" class="cb-btn" style="background:linear-gradient(135deg,#00f2a1,#10b981); color:#000; font-weight:900; border:1px solid #34d399;" onclick="window.RealTimeLedgerV25 && window.RealTimeLedgerV25.openModal()" title="Campo Elettronico 1s (In Corso, In Coda, Eseguite) + Grafico Laterale di Avanzamento">
+        📟 Campo Elettronico 1s &amp; Grafico
       </button>
       <button type="button" class="cb-btn" style="background:linear-gradient(135deg,#9333ea,#c084fc); color:#000; font-weight:900; border:1px solid #e879f9;" onclick="window.LeverageMatrixV24 && window.LeverageMatrixV24.openModal()" title="Matrice Gerarchica Leva a 4 Livelli (Ottimale AI / Globale / Settoriale / Singolo Titolo)">
         ⚡ Leva 4-Livelli AI (1x➔200x)
@@ -1500,6 +1503,9 @@
         </div>
 
       </div>
+
+      <!-- REAL-TIME 1-SECOND ELECTRONIC OPERATIONS LEDGER + LATERAL PROGRESS CHART v25.0 -->
+      <div id="v25-ledger-main-dock"></div>
 
       <!-- BOTTOM DOCK: BYBIT ACTIVE POSITIONS & ORDERS -->
       <div class="bb-positions-dock" id="bb-col-positions">
@@ -3735,6 +3741,6 @@
   <script src="js/tpu_security_guard.js?v=3.5.0"></script>
   <script src="js/marketing_erp_engine.js?v=3.5.0"></script>
   <script src="js/rnd_autonomous_agents.js?v=3.5.0"></script>
-  <script src="js/trading_ced_suite_v18.js?v=24.0"></script>
+  <script src="js/trading_ced_suite_v18.js?v=25.0"></script>
 </body>
 </html>
