@@ -26,8 +26,12 @@ const OrderFlowEngine = {
     showLiquidationHeatmap: true,
     showOiCvdStrip: true,
     guidePanelOpen: false,
-    leveragePools: [10, 25, 50, 100]
+    leveragePools: [10, 25, 50, 100],
+    showOrderBlockMicrostructureV27: true,
+    scannerPanelOpen: true
   },
+  v27OrderBlocks: [],
+  v27TopBotSignal: null,
   denseGridActive: true,
   denseGridSettings: {
     minPixelGap: 24,
@@ -527,6 +531,12 @@ const OrderFlowEngine = {
     }
 
     const deltaPoints = [];
+    const cPocTrackPoints = [];
+    const stackedOrderBlocks = [];
+    const trappedTradersAlerts = [];
+    const icebergAbsorptions = [];
+    const unfinishedAuctions = [];
+    const v27DetectedBlocks = [];
     let cumulativeCvd = 0;
     let baseOi = 18500;
     let lastCandleSummary = null;
@@ -560,15 +570,65 @@ const OrderFlowEngine = {
       let candleSellVol = 0;
       let topAbsorptionCluster = null;
       let bestAskImb = null;
+      let candlePocCluster = clusters[0] || null;
+      let buyImbStreak = [];
+      let sellImbStreak = [];
+      let icebergCluster = null;
 
       // Actual cell width: wide enough for crisp numbers when canDrawTextHere, compact proportional bars when zoomed far out
       const activeColW = canDrawTextHere ? colW : Math.max(4, Math.min(18, barSpacing * 0.42));
 
-      clusters.forEach(cl => {
+      clusters.forEach((cl, clIdx) => {
         candleBuyVol += cl.ask;
         candleSellVol += cl.bid;
         if (cl.isTopAbsorption) topAbsorptionCluster = cl;
         if (cl.isBuyImbalance && (!bestAskImb || cl.ask > bestAskImb.ask)) bestAskImb = cl;
+        if (cl.isPoc) candlePocCluster = cl;
+
+        // Track Stacked Imbalances (3+ consecutive levels >= 3x)
+        if (cl.isBuyImbalance) {
+          buyImbStreak.push(cl);
+        } else {
+          if (buyImbStreak.length >= 3) {
+            stackedOrderBlocks.push({
+              type: 'STACKED_BUY_ORDERBLOCK',
+              signal: 'LONG',
+              lowPrice: buyImbStreak[0].bottom,
+              highPrice: buyImbStreak[buyImbStreak.length - 1].top,
+              midPrice: (buyImbStreak[0].bottom + buyImbStreak[buyImbStreak.length - 1].top) / 2,
+              levelsCount: buyImbStreak.length,
+              xStart: x,
+              candleIdx: i
+            });
+          }
+          buyImbStreak = [];
+        }
+        if (cl.isSellImbalance) {
+          sellImbStreak.push(cl);
+        } else {
+          if (sellImbStreak.length >= 3) {
+            stackedOrderBlocks.push({
+              type: 'STACKED_SELL_ORDERBLOCK',
+              signal: 'SHORT',
+              lowPrice: sellImbStreak[0].bottom,
+              highPrice: sellImbStreak[sellImbStreak.length - 1].top,
+              midPrice: (sellImbStreak[0].bottom + sellImbStreak[sellImbStreak.length - 1].top) / 2,
+              levelsCount: sellImbStreak.length,
+              xStart: x,
+              candleIdx: i
+            });
+          }
+          sellImbStreak = [];
+        }
+
+        // Detect Iceberg Absorption (huge passive defense at candle extreme without price breaking through)
+        if ((clIdx === 0 || clIdx === clusters.length - 1) && cl.total >= maxClusterVol * 0.85) {
+          const isResistanceIceberg = (clIdx === clusters.length - 1) && (c.close < cl.price);
+          const isSupportIceberg = (clIdx === 0) && (c.close > cl.price);
+          if (isResistanceIceberg || isSupportIceberg) {
+            icebergCluster = { ...cl, side: isResistanceIceberg ? 'SHORT' : 'LONG' };
+          }
+        }
 
         const yTop = candleSeriesInst.priceToCoordinate(cl.top);
         const yBottom = candleSeriesInst.priceToCoordinate(cl.bottom);
@@ -673,6 +733,63 @@ const OrderFlowEngine = {
         ctx.restore();
       }
 
+      // Flush any trailing Stacked Imbalance streak at top of candle
+      if (buyImbStreak.length >= 3) {
+        stackedOrderBlocks.push({
+          type: 'STACKED_BUY_ORDERBLOCK',
+          signal: 'LONG',
+          lowPrice: buyImbStreak[0].bottom,
+          highPrice: buyImbStreak[buyImbStreak.length - 1].top,
+          midPrice: (buyImbStreak[0].bottom + buyImbStreak[buyImbStreak.length - 1].top) / 2,
+          levelsCount: buyImbStreak.length,
+          xStart: x,
+          candleIdx: i
+        });
+      }
+      if (sellImbStreak.length >= 3) {
+        stackedOrderBlocks.push({
+          type: 'STACKED_SELL_ORDERBLOCK',
+          signal: 'SHORT',
+          lowPrice: sellImbStreak[0].bottom,
+          highPrice: sellImbStreak[sellImbStreak.length - 1].top,
+          midPrice: (sellImbStreak[0].bottom + sellImbStreak[sellImbStreak.length - 1].top) / 2,
+          levelsCount: sellImbStreak.length,
+          xStart: x,
+          candleIdx: i
+        });
+      }
+
+      // Record cPOC Migration point
+      if (candlePocCluster) {
+        const yPoc = candleSeriesInst.priceToCoordinate(candlePocCluster.price);
+        if (yPoc != null && yPoc > 8 && yPoc < chartBottomY - 8) {
+          cPocTrackPoints.push({ x, y: yPoc, price: candlePocCluster.price, idx: i });
+        }
+      }
+
+      // Record Iceberg Absorption
+      if (icebergCluster && i >= toIdx - 6) {
+        const yIce = candleSeriesInst.priceToCoordinate(icebergCluster.price);
+        if (yIce != null && yIce > 14 && yIce < chartBottomY - 14) {
+          icebergAbsorptions.push({
+            x, y: yIce, price: icebergCluster.price, side: icebergCluster.side,
+            bid: icebergCluster.bid, ask: icebergCluster.ask, idx: i
+          });
+        }
+      }
+
+      // Record Unfinished Business (Asta Incompleta on extreme highs/lows)
+      if (i >= toIdx - 4 && clusters.length >= 2) {
+        const lowExt = clusters[0];
+        const highExt = clusters[clusters.length - 1];
+        if (highExt.bid > 15 && highExt.ask > 15 && Math.abs(c.high - visHigh) <= visSpan * 0.15) {
+          unfinishedAuctions.push({ price: c.high, bid: highExt.bid, ask: highExt.ask, kind: 'HIGH', x });
+        }
+        if (lowExt.bid > 15 && lowExt.ask > 15 && Math.abs(c.low - visLow) <= visSpan * 0.15) {
+          unfinishedAuctions.push({ price: c.low, bid: lowExt.bid, ask: lowExt.ask, kind: 'LOW', x });
+        }
+      }
+
       // 7. Compute Per-Candle Delta, Cumulative Volume Delta (CVD), Open Interest (OI) & Forced Liquidations
       const candleDelta = candleBuyVol - candleSellVol;
       cumulativeCvd += candleDelta;
@@ -728,10 +845,181 @@ const OrderFlowEngine = {
         squeezeMetrics.candleDelta = candleDelta;
       }
 
+      // 8. Classify Candle Block into the 4 Institutional Quadrants + Trapped Traders Detection
+      if (candlePocCluster && (i >= toIdx - 8)) {
+        const oiContractsDelta = Math.round((oiDeltaPct / 100) * baseOi);
+        let priceActionState = 'HOLDING_ABOVE';
+        if (candleDelta > 0 && oiContractsDelta > 0 && liveP < c.low) {
+          priceActionState = 'BROKEN_BELOW';
+        } else if (candleDelta < 0 && oiContractsDelta > 0 && liveP > c.high) {
+          priceActionState = 'BROKEN_ABOVE';
+        } else if (priceChg >= 0 && oiContractsDelta <= 0 && i === peakIdx) {
+          priceActionState = 'REJECTING_HIGH';
+        }
+
+        const qInfo = this.classifyOrderBlockQuadrantV27({
+          priceLevel: candlePocCluster.price,
+          bidVol: candleSellVol,
+          askVol: candleBuyVol,
+          deltaOI: oiContractsDelta,
+          priceActionAtLevel: priceActionState,
+          candleHigh: c.high,
+          candleLow: c.low,
+          livePrice: liveP,
+          prec
+        });
+
+        if (qInfo.code === 'TRAPPED_LONGS_SHORT_SIGNAL' || qInfo.code === 'TRAPPED_SHORTS_LONG_SIGNAL') {
+          const yTrap = candleSeriesInst.priceToCoordinate(candlePocCluster.price);
+          if (yTrap != null && yTrap > 16 && yTrap < chartBottomY - 16) {
+            trappedTradersAlerts.push({ ...qInfo, x, y: yTrap, idx: i });
+          }
+        }
+        v27DetectedBlocks.push(qInfo);
+      }
+
       if (i === candles.length - 1) {
         lastCandleSummary = deltaPoints[deltaPoints.length - 1];
       }
     });
+
+    // =========================================================================
+    // B2. v27.0 MICROSTRUCTURE OVERLAYS ON TWIN CANVAS
+    //     1) Stacked Imbalance Order Block Bands
+    //     2) cPOC Migration Golden Line
+    //     3) Unfinished Business Magnetic TP Lines
+    //     4) Iceberg Absorption & Trapped Traders Badges
+    // =========================================================================
+    if (isTwinChart && this.footprintSettings.showOrderBlockMicrostructureV27) {
+      // 1) Stacked Imbalance Demand/Supply Order Blocks (last 3 strongest)
+      stackedOrderBlocks.slice(-3).forEach(ob => {
+        const yTop = candleSeriesInst.priceToCoordinate(ob.highPrice);
+        const yBot = candleSeriesInst.priceToCoordinate(ob.lowPrice);
+        if (yTop == null || yBot == null) return;
+        const yMin = Math.max(8, Math.min(yTop, yBot));
+        const hBox = Math.max(10, Math.min(chartBottomY - yMin - 6, Math.abs(yBot - yTop)));
+        if (hBox < 6 || yMin >= chartBottomY - 10) return;
+
+        const isBuyOB = ob.signal === 'LONG';
+        ctx.save();
+        ctx.fillStyle = isBuyOB ? 'rgba(0, 242, 161, 0.12)' : 'rgba(244, 63, 94, 0.12)';
+        ctx.fillRect(ob.xStart, yMin, Math.max(40, maxDrawRightX - ob.xStart), hBox);
+        ctx.strokeStyle = isBuyOB ? 'rgba(0, 242, 161, 0.65)' : 'rgba(244, 63, 94, 0.65)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(ob.xStart, yMin, Math.max(40, maxDrawRightX - ob.xStart), hBox);
+        ctx.setLineDash([]);
+
+        const obLabel = `${isBuyOB ? '🟢 Demand OB' : '🔴 Supply OB'} (${ob.levelsCount}x Imb) ${curr}${ob.lowPrice.toFixed(prec)}-${ob.highPrice.toFixed(prec)}`;
+        ctx.font = 'bold 7.2px "JetBrains Mono", monospace';
+        const tw = ctx.measureText(obLabel).width + 8;
+        const lx = Math.max(8, maxDrawRightX - tw - 6);
+        ctx.fillStyle = isBuyOB ? 'rgba(6, 42, 32, 0.90)' : 'rgba(54, 12, 22, 0.90)';
+        ctx.fillRect(lx, yMin + 1, tw, 11);
+        ctx.fillStyle = isBuyOB ? '#6ee7b7' : '#fda4af';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(obLabel, lx + 4, yMin + 6.5);
+        ctx.restore();
+      });
+
+      // 2) cPOC Migration Golden Line connecting Candle POCs
+      if (cPocTrackPoints.length >= 2) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.85)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        cPocTrackPoints.forEach((pt, idx) => {
+          if (idx === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+        cPocTrackPoints.forEach(pt => {
+          ctx.fillStyle = '#facc15';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.restore();
+      }
+
+      // 3) Unfinished Business / Asta Incompleta (Magnetic Cyan Target Lines)
+      const drawnUnfin = new Set();
+      unfinishedAuctions.slice(-2).forEach(ua => {
+        const key = ua.kind;
+        if (drawnUnfin.has(key)) return;
+        drawnUnfin.add(key);
+        const yU = candleSeriesInst.priceToCoordinate(ua.price);
+        if (yU == null || yU < 10 || yU > chartBottomY - 10) return;
+        ctx.save();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.1;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(ua.x, yU);
+        ctx.lineTo(maxDrawRightX, yU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const uLbl = `🎯 Asta Incompleta @ ${curr}${ua.price.toFixed(prec)} (${this.formatCompactContractNum(ua.bid)}x${this.formatCompactContractNum(ua.ask)})`;
+        ctx.font = 'bold 7px "JetBrains Mono", monospace';
+        const tw = ctx.measureText(uLbl).width + 8;
+        const lx = Math.max(8, maxDrawRightX - tw - 6);
+        ctx.fillStyle = 'rgba(8, 28, 48, 0.92)';
+        ctx.strokeStyle = '#38bdf8';
+        ctx.fillRect(lx, yU - 6, tw, 12);
+        ctx.strokeRect(lx, yU - 6, tw, 12);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(uLbl, lx + 4, yU);
+        ctx.restore();
+      });
+
+      // 4) Iceberg Absorption & Trapped Traders Badges
+      icebergAbsorptions.slice(-2).forEach(ice => {
+        ctx.save();
+        const iLbl = `🧊 ICEBERG @ ${curr}${ice.price.toFixed(prec)}`;
+        ctx.font = 'bold 7px "JetBrains Mono", monospace';
+        const tw = ctx.measureText(iLbl).width + 8;
+        const bx = Math.max(6, Math.min(maxDrawRightX - tw - 4, ice.x - tw / 2));
+        const by = Math.max(12, Math.min(chartBottomY - 14, ice.y));
+        ctx.fillStyle = 'rgba(12, 34, 56, 0.92)';
+        ctx.strokeStyle = '#60a5fa';
+        ctx.fillRect(bx, by - 6, tw, 12);
+        ctx.strokeRect(bx, by - 6, tw, 12);
+        ctx.fillStyle = '#bae6fd';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(iLbl, bx + tw / 2, by);
+        ctx.restore();
+      });
+
+      trappedTradersAlerts.slice(-2).forEach(trap => {
+        ctx.save();
+        const isShortTrig = trap.signalDirection === 'SHORT';
+        const tLbl = isShortTrig
+          ? `🪤 TRAPPED LONGS @ ${curr}${trap.exactLevelPrice.toFixed(prec)} ➔ SHORT`
+          : `🪤 TRAPPED SHORTS @ ${curr}${trap.exactLevelPrice.toFixed(prec)} ➔ LONG`;
+        ctx.font = 'bold 7px "JetBrains Mono", monospace';
+        const tw = ctx.measureText(tLbl).width + 8;
+        const bx = Math.max(6, Math.min(maxDrawRightX - tw - 4, trap.x - tw / 2));
+        const by = Math.max(14, Math.min(chartBottomY - 14, trap.y + 12));
+        ctx.fillStyle = isShortTrig ? 'rgba(65, 14, 24, 0.94)' : 'rgba(10, 50, 34, 0.94)';
+        ctx.strokeStyle = isShortTrig ? '#f43f5e' : '#00f2a1';
+        ctx.fillRect(bx, by - 6, tw, 12);
+        ctx.strokeRect(bx, by - 6, tw, 12);
+        ctx.fillStyle = isShortTrig ? '#fecdd3' : '#a7f3d0';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(tLbl, bx + tw / 2, by);
+        ctx.restore();
+      });
+    }
+
+    // Store & Render Live 1s 4-Quadrants Scanner Table + Auto-Trader Signal
+    this.v27OrderBlocks = v27DetectedBlocks;
+    this.updateV27ScannerTableDOM(v27DetectedBlocks, stackedOrderBlocks, unfinishedAuctions, icebergAbsorptions, curr, prec);
 
     // =========================================================================
     // C. SYNCHRONIZED BOTTOM SUB-STRIP: DELTA + CVD + OPEN INTEREST (OI) + LIQUIDATIONS
@@ -1600,8 +1888,207 @@ const OrderFlowEngine = {
 
     ctx.restore();
   }
+
+  // =========================================================================
+  // v27.0: 4-QUADRANTS ORDERBLOCK MICROSTRUCTURE & AUTO-TRADER CONNECTOR
+  // =========================================================================
+  classifyOrderBlockQuadrantV27({ priceLevel, bidVol, askVol, deltaOI, priceActionAtLevel = 'HOLDING_ABOVE', candleHigh, candleLow, livePrice, prec = 2 }) {
+    const netDelta = askVol - bidVol;
+    const totalVol = askVol + bidVol;
+    const dominancePct = totalVol > 0 ? Math.round((Math.max(askVol, bidVol) / totalVol) * 100) : 50;
+    const span = Math.max(priceLevel * 0.004, Math.abs((candleHigh || priceLevel) - (candleLow || priceLevel)) * 1.4);
+
+    if (netDelta >= 0 && deltaOI > 0) {
+      const isTrapped = priceActionAtLevel === 'BROKEN_BELOW';
+      const dir = isTrapped ? 'SHORT' : 'LONG';
+      return {
+        quadrant: 1,
+        code: isTrapped ? 'TRAPPED_LONGS_SHORT_SIGNAL' : 'NEW_LONGS_OPENING',
+        badge: isTrapped ? '🪤 TRAPPED LONGS ➔ SHORT' : '🟢 NUOVI LONG APERTI',
+        color: isTrapped ? '#f43f5e' : '#00f2a1',
+        bidVol,
+        askVol,
+        netDelta,
+        deltaOI,
+        dominancePct,
+        exactLevelPrice: priceLevel,
+        signalDirection: dir,
+        entryPrice: priceLevel,
+        stopLoss: isTrapped ? priceLevel + span * 0.9 : priceLevel - span * 0.9,
+        takeProfit: isTrapped ? priceLevel - span * 2.2 : priceLevel + span * 2.2,
+        confidence: isTrapped ? 93 : 89,
+        autoTraderAction: isTrapped
+          ? `SHORT su retest ${priceLevel.toFixed(prec)} (Stop-Loss Long intrappolati)`
+          : `LONG su difesa blocco ${priceLevel.toFixed(prec)} (Nuovi Long Istituzionali)`
+      };
+    }
+
+    if (netDelta < 0 && deltaOI > 0) {
+      const isTrapped = priceActionAtLevel === 'BROKEN_ABOVE';
+      const dir = isTrapped ? 'LONG' : 'SHORT';
+      return {
+        quadrant: 2,
+        code: isTrapped ? 'TRAPPED_SHORTS_LONG_SIGNAL' : 'NEW_SHORTS_OPENING',
+        badge: isTrapped ? '🪤 TRAPPED SHORTS ➔ LONG' : '🔴 NUOVI SHORT APERTI',
+        color: isTrapped ? '#00f2a1' : '#f43f5e',
+        bidVol,
+        askVol,
+        netDelta,
+        deltaOI,
+        dominancePct,
+        exactLevelPrice: priceLevel,
+        signalDirection: dir,
+        entryPrice: priceLevel,
+        stopLoss: isTrapped ? priceLevel - span * 0.9 : priceLevel + span * 0.9,
+        takeProfit: isTrapped ? priceLevel + span * 2.2 : priceLevel - span * 2.2,
+        confidence: isTrapped ? 94 : 90,
+        autoTraderAction: isTrapped
+          ? `LONG su breakout ${priceLevel.toFixed(prec)} (Squeeze Short intrappolati)`
+          : `SHORT su livello ${priceLevel.toFixed(prec)} (Nuovi Short Aggressivi)`
+      };
+    }
+
+    if (netDelta >= 0 && deltaOI <= 0) {
+      const isRev = priceActionAtLevel === 'REJECTING_HIGH';
+      return {
+        quadrant: 3,
+        code: 'SHORT_COVERING_CLOSING',
+        badge: '🟡 SHORT CHIUSI / RICOPERTURE',
+        color: '#facc15',
+        bidVol,
+        askVol,
+        netDelta,
+        deltaOI,
+        dominancePct,
+        exactLevelPrice: priceLevel,
+        signalDirection: 'SHORT',
+        entryPrice: priceLevel,
+        stopLoss: priceLevel + span * 0.85,
+        takeProfit: priceLevel - span * 2.1,
+        confidence: isRev ? 91 : 85,
+        autoTraderAction: `SHORT REVERSAL su esaurimento @ ${priceLevel.toFixed(prec)} (OI in calo)`
+      };
+    }
+
+    return {
+      quadrant: 4,
+      code: 'LONG_LIQUIDATION_CLOSING',
+      badge: '🟠 LONG CHIUSI / LIQUIDATI',
+      color: '#fb923c',
+      bidVol,
+      askVol,
+      netDelta,
+      deltaOI,
+      dominancePct,
+      exactLevelPrice: priceLevel,
+      signalDirection: 'LONG',
+      entryPrice: priceLevel,
+      stopLoss: priceLevel - span * 0.85,
+      takeProfit: priceLevel + span * 2.1,
+      confidence: 87,
+      autoTraderAction: `LONG REVERSAL SNIPER @ ${priceLevel.toFixed(prec)} (Capitolazione assorbita)`
+    };
+  },
+
+  toggleV27ScannerPanel(forced) {
+    const body = document.getElementById('v27-scanner-body-wrap');
+    if (!body) return;
+    this.footprintSettings.scannerPanelOpen = typeof forced === 'boolean'
+      ? forced
+      : (body.style.display === 'none');
+    body.style.display = this.footprintSettings.scannerPanelOpen ? 'block' : 'none';
+  },
+
+  sendV27OrderBlockToBot(idx) {
+    const blk = (this.v27OrderBlocks || [])[idx] || this.v27TopBotSignal;
+    if (!blk) return;
+    const sym = window.currentSymbol || 'BTCUSDT';
+    const asset = window.getAssetBySymbol ? window.getAssetBySymbol(sym) : null;
+    const prec = window.getDynamicPrecision
+      ? window.getDynamicPrecision(blk.entryPrice, sym)
+      : (asset ? (asset.precision || 2) : 2);
+    const isShort = blk.signalDirection === 'SHORT';
+
+    const entryEl = document.getElementById('t-entry');
+    const slEl = document.getElementById('t-sl');
+    const tpEl = document.getElementById('t-tp');
+    if (entryEl) entryEl.value = Number(blk.entryPrice).toFixed(prec);
+    if (slEl) slEl.value = Number(blk.stopLoss).toFixed(prec);
+    if (tpEl) tpEl.value = Number(blk.takeProfit).toFixed(prec);
+
+    if (window.BybitEngine && typeof window.BybitEngine.setOrderSide === 'function') {
+      window.BybitEngine.setOrderSide(isShort ? 'Sell' : 'Buy');
+    }
+    if (window.RealTimeLedgerV25 && typeof window.RealTimeLedgerV25.enqueueOrExecuteSymbol === 'function') {
+      try { window.RealTimeLedgerV25.enqueueOrExecuteSymbol(sym, isShort ? 'SHORT' : 'LONG'); } catch (e) {}
+    }
+    if (window.OptimalEngine && typeof window.OptimalEngine.renderVolumeProfileOverlay === 'function') {
+      try { window.OptimalEngine.renderVolumeProfileOverlay(); } catch (e) {}
+    }
+    if (window.showToast) {
+      window.showToast(`🤖 Blocco ${blk.badge} (${blk.signalDirection}) inviato su ${sym} @ ${Number(blk.entryPrice).toFixed(prec)} (SL ${Number(blk.stopLoss).toFixed(prec)} | TP ${Number(blk.takeProfit).toFixed(prec)})`, 'success');
+    }
+  },
+
+  updateV27ScannerTableDOM(blocks = [], stacked = [], unfinished = [], icebergs = [], curr = '$', prec = 2) {
+    const tbody = document.getElementById('v27-orderblock-scanner-tbody');
+    const summaryEl = document.getElementById('v27-scanner-summary-pills');
+    if (!tbody) return;
+
+    const latest = blocks.slice(-6).reverse();
+    if (!latest.length) return;
+
+    // Select highest-confidence block as Top Bot Signal (and adjust TP to Unfinished Business magnet if available)
+    const topBlk = latest.reduce((best, cur) => (cur.confidence > (best?.confidence || 0) ? cur : best), latest[0]);
+    if (unfinished.length) {
+      const targetUa = unfinished.find(u =>
+        (topBlk.signalDirection === 'LONG' && u.price > topBlk.entryPrice) ||
+        (topBlk.signalDirection === 'SHORT' && u.price < topBlk.entryPrice)
+      );
+      if (targetUa) topBlk.takeProfit = targetUa.price;
+    }
+    this.v27TopBotSignal = topBlk;
+
+    if (summaryEl) {
+      const stackedTxt = stacked.length ? `${stacked.length} Stacked OB` : '0 Stacked';
+      const iceTxt = icebergs.length ? `🧊 ${icebergs.length} Iceberg` : '🧊 0';
+      const unfinTxt = unfinished.length ? `🎯 ${unfinished.length} Asta Inc.` : '🎯 0';
+      summaryEl.innerHTML = `
+        <span style="color:#00f2a1;font-weight:800;">Top Bot: ${topBlk.signalDirection} @ ${curr}${Number(topBlk.entryPrice).toFixed(prec)}</span>
+        <span style="color:#facc15;">• ${stackedTxt}</span>
+        <span style="color:#93c5fd;">• ${iceTxt}</span>
+        <span style="color:#38bdf8;">• ${unfinTxt}</span>
+      `;
+    }
+
+    tbody.innerHTML = latest.map((b, rIdx) => {
+      const origIdx = blocks.length - 1 - rIdx;
+      const dSign = b.netDelta >= 0 ? '+' : '-';
+      const oiSign = b.deltaOI >= 0 ? '+' : '';
+      const dirColor = b.signalDirection === 'LONG' ? '#00f2a1' : '#f43f5e';
+      return `
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+          <td style="padding:4px 6px; font-weight:900; color:#e2e8f0; white-space:nowrap;">${curr}${Number(b.exactLevelPrice).toFixed(prec)}</td>
+          <td style="padding:4px 6px; white-space:nowrap; font-size:10px;">
+            <span style="color:#ff6b81;">${this.formatCompactContractNum(b.bidVol)}</span>x<span style="color:#2ed573;">${this.formatCompactContractNum(b.askVol)}</span>
+            <span style="color:${b.netDelta >= 0 ? '#2ed573' : '#ff6b81'};"> (${dSign}${this.formatCompactContractNum(Math.abs(b.netDelta))})</span>
+            <span style="color:${b.deltaOI >= 0 ? '#38bdf8' : '#facc15'};"> | ΔOI ${oiSign}${b.deltaOI}</span>
+          </td>
+          <td style="padding:4px 6px; font-weight:800; color:${b.color}; white-space:nowrap;">${b.badge}</td>
+          <td style="padding:4px 6px; font-size:10px; white-space:nowrap;">
+            <b style="color:${dirColor};">${b.signalDirection}</b>
+            <span style="color:#94a3b8;"> • In:${curr}${Number(b.entryPrice).toFixed(prec)} • SL:${curr}${Number(b.stopLoss).toFixed(prec)} • TP:${curr}${Number(b.takeProfit).toFixed(prec)}</span>
+          </td>
+          <td style="padding:4px 6px; text-align:right;">
+            <button type="button" onclick="if(window.OrderFlowEngine) OrderFlowEngine.sendV27OrderBlockToBot(${origIdx})" style="padding:2px 7px; font-size:9.5px; font-weight:900; border-radius:4px; background:rgba(0,242,161,0.18); border:1px solid #00f2a1; color:#00f2a1; cursor:pointer; white-space:nowrap;">⚡ Invia Bot</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
 };
 
 window.OrderFlowEngine = OrderFlowEngine;
+window.OrderBlockMicrostructureV27 = OrderFlowEngine;
 window.toggleFootprintOverlay = () => OrderFlowEngine.toggleFootprint();
 window.toggleForecastCone = (f) => OrderFlowEngine.toggleForecastCone(f);
