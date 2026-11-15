@@ -950,23 +950,53 @@
             </div>
 
             <!-- ========================================================================= -->
-            <!-- SECONDO GRAFICO GEMELLO SOTTO AL PRINCIPALE (STESSE DIMENSIONI, ON/OFF)    -->
+            <!-- LEVETTA CENTRALE DRAGGABLE TRA GRAFICO NATIVO SUPERIORE E GRAFICO GEMELLO  -->
+            <!-- ========================================================================= -->
+            <div class="chart-splitter" id="splitter-twin-central" style="height:10px; background:linear-gradient(90deg, #0f172a, rgba(16,185,129,0.28), #0f172a); border-top:1px solid rgba(16,185,129,0.45); border-bottom:1px solid rgba(56,189,248,0.45); cursor:ns-resize; display:flex; align-items:center; justify-content:center; gap:8px; user-select:none; touch-action:none;" title="Trascina su/giù la Levetta Centrale per calibrare le altezze tra Grafico Superiore e Grafico Gemello Volumi 1s">
+              <div class="splitter-grip" style="width:46px; height:4px; border-radius:3px; background:#00f2a1; box-shadow:0 0 8px rgba(0,242,161,0.7);"></div>
+              <span style="font-size:8.5px; font-weight:800; color:#00f2a1; font-family:var(--font-mono); letter-spacing:0.4px; pointer-events:none;">↕ LEVETTA CENTRALE ALTEZZA GRAFICI</span>
+              <div class="splitter-grip" style="width:46px; height:4px; border-radius:3px; background:#00f2a1; box-shadow:0 0 8px rgba(0,242,161,0.7);"></div>
+            </div>
+
+            <!-- ========================================================================= -->
+            <!-- SECONDO GRAFICO GEMELLO SOTTO AL PRINCIPALE (ALTEZZA REGOLABILE, ON/OFF)   -->
             <!-- CANDELE VOLUMI & BLOCCHI ORDINI ACQUISTO/VENDITA + LINEA SVILUPPO PREZZO 1s -->
             <!-- ========================================================================= -->
-            <div id="twin-footprint-chart-section" style="width:100%; border-top:2px solid #1e293b; background:#070a12; position:relative;">
-              <div class="subpane-header-bar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px; padding:4px 10px; background:linear-gradient(90deg, rgba(16,185,129,0.14), rgba(15,23,42,0.96)); border-bottom:1px solid rgba(16,185,129,0.3);">
-                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                  <span style="font-size:10.5px; font-weight:900; color:#00f2a1; letter-spacing:0.3px;">🧱📊 GRAFICO GEMELLO CANDELE VOLUMI &amp; BLOCCHI ORDINI (OPENMARKET 1s)</span>
-                  <span id="twin-fp-live-1s-badge" style="font-size:10px; font-family:var(--font-mono); color:#f8fafc; background:rgba(0,0,0,0.45); padding:1px 7px; border-radius:4px; border:1px solid rgba(255,255,255,0.12);">1s Live: sincronizzazione blocchi...</span>
+            <div id="twin-footprint-chart-section" style="width:100%; background:#070a12; position:relative;">
+              <div class="subpane-header-bar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; padding:5px 10px; background:linear-gradient(90deg, rgba(16,185,129,0.16), rgba(15,23,42,0.98)); border-bottom:1px solid rgba(16,185,129,0.35);">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:7px;">
+                  <span style="font-size:10.5px; font-weight:900; color:#00f2a1; letter-spacing:0.3px;">🧱📊 GRAFICO GEMELLO CANDELE VOLUMI &amp; BLOCCHI ORDINI (1s)</span>
+                  <span id="twin-fp-live-1s-badge" style="font-size:9.8px; font-family:var(--font-mono); color:#f8fafc; background:rgba(0,0,0,0.45); padding:1px 7px; border-radius:4px; border:1px solid rgba(255,255,255,0.12);">1s Live: sincronizzazione blocchi...</span>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="font-size:9.5px; color:#94a3b8;">🟥 Blocchi Vendita (Sx) | 🟩 Blocchi Acquisto (Dx) • Linea Sviluppo Prezzo</span>
-                  <button type="button" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleTwinFootprintChart(false)" style="padding:2px 7px; font-size:9.5px; font-weight:800; border-radius:4px; background:rgba(244,63,94,0.15); border:1px solid #f43f5e; color:#fca5a5; cursor:pointer;" title="Spegni Grafico Gemello">✕ Nascondi</button>
+
+                <!-- CONTROLLI ALTEZZA PRECISI DEL GRAFICO GEMELLO (TASTI NUMERICI + INPUT NUMERO + LEVETTA SLIDER) -->
+                <div class="pane-height-controls" style="display:flex; flex-wrap:wrap; align-items:center; gap:3px;">
+                  <span style="font-size:9.5px; font-weight:800; color:#fcd535;">📏 Altezza:</span>
+                  <button type="button" class="btn-pane-h" onclick="if(window.OrderFlowEngine) OrderFlowEngine.adjustTwinChartHeight(-30)" title="Riduci Altezza (-30px)">-</button>
+                  <input type="number" id="twin-fp-height-num-input" value="460" min="180" max="1600" step="10" onchange="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(this.value)" style="width:52px; height:20px; background:#090d16; color:#00f2a1; border:1px solid rgba(0,242,161,0.45); border-radius:4px; font-family:var(--font-mono); font-size:10px; font-weight:800; text-align:center; padding:0 2px;" title="Inserisci altezza esatta in pixel (180-1600px)">
+                  <span style="font-size:9px; color:#94a3b8; margin-right:2px;">px</span>
+                  <button type="button" class="btn-pane-h" onclick="if(window.OrderFlowEngine) OrderFlowEngine.adjustTwinChartHeight(30)" title="Aumenta Altezza (+30px)">+</button>
+
+                  <input type="range" id="twin-fp-height-inline-slider" min="180" max="1600" step="10" value="460" oninput="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(this.value, false)" onchange="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(this.value, true)" style="width:74px; accent-color:#00f2a1; cursor:pointer; margin:0 3px;" title="Levetta regolazione continua altezza Grafico Gemello (180px - 1600px)">
+
+                  <button type="button" class="btn-pane-h twin-h-quick-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(260)" title="Altezza 260px">260</button>
+                  <button type="button" class="btn-pane-h twin-h-quick-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(380)" title="Altezza 380px">380</button>
+                  <button type="button" class="btn-pane-h twin-h-quick-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(520)" title="Altezza 520px">520</button>
+                  <button type="button" class="btn-pane-h twin-h-quick-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(750)" title="Altezza 750px">750</button>
+                  <button type="button" class="btn-pane-h twin-h-quick-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(1000)" title="Altezza 1000px">1000</button>
+                  <button type="button" class="btn-pane-h twin-h-quick-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(1400)" title="Altezza 1400px">1400</button>
+                  <button type="button" class="btn-pane-h" style="border-color:#38bdf8; color:#38bdf8; font-weight:800;" onclick="if(window.OrderFlowEngine && window.BybitChartSettings) OrderFlowEngine.setTwinChartHeight(BybitChartSettings.currentHeight || 520)" title="Allinea esattamente all'altezza del grafico superiore (=Sopra)">=Sopra</button>
+                  <button type="button" class="btn-pane-h" style="border-color:#fcd535; color:#fcd535; font-weight:800;" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleTwinFullScreen()" title="Schermo Intero Grafico Gemello ⛶">⛶</button>
+                  <button type="button" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleTwinFootprintChart(false)" style="padding:2px 7px; font-size:9.5px; font-weight:800; border-radius:4px; background:rgba(244,63,94,0.15); border:1px solid #f43f5e; color:#fca5a5; cursor:pointer; margin-left:3px;" title="Spegni Grafico Gemello">✕ OFF</button>
                 </div>
               </div>
-              <div id="twin-footprint-viewport-wrapper" class="chart-viewport-wrapper" style="position:relative; width:100%; height:380px; overflow:hidden; background:#070a12;">
+              <div id="twin-footprint-viewport-wrapper" class="chart-viewport-wrapper" style="position:relative; width:100%; height:460px; overflow:hidden; background:#070a12;">
                 <div id="twin-footprint-chart-container" style="width:100%; height:100%;"></div>
                 <canvas id="twin-footprint-blocks-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></canvas>
+              </div>
+              <!-- LEVETTA INFERIORE DRAGGABLE PER IL GRAFICO GEMELLO -->
+              <div class="chart-splitter" id="splitter-twin-bottom" style="height:8px; background:rgba(16,185,129,0.12); border-top:1px solid rgba(16,185,129,0.3); border-bottom:1px solid #1e293b; cursor:ns-resize; display:flex; align-items:center; justify-content:center; user-select:none; touch-action:none;" title="Trascina su/giù per ridimensionare l'altezza del Grafico Gemello Candele Volumi">
+                <div class="splitter-grip" style="width:42px; height:3px; border-radius:2px; background:#10b981;"></div>
               </div>
             </div>
 
@@ -3485,13 +3515,13 @@
   <script src="js/casario_quant_engine.js?v=2.9.5"></script>
   <script src="js/quant_engines.js?v=2.9.0"></script>
   <script src="js/sector_rotation.js?v=2.9.0"></script>
-  <script src="js/optimal_engine.js?v=25.4"></script>
-  <script src="js/opportunity_scanner.js?v=25.4"></script>
-  <script src="js/skills.js?v=25.4"></script>
-  <script src="js/trading.js?v=25.4"></script>
-  <script src="js/journal.js?v=25.4"></script>
-  <script src="js/alerts.js?v=25.4"></script>
-  <script src="js/app.js?v=25.4"></script>
+  <script src="js/optimal_engine.js?v=25.5"></script>
+  <script src="js/opportunity_scanner.js?v=25.5"></script>
+  <script src="js/skills.js?v=25.5"></script>
+  <script src="js/trading.js?v=25.5"></script>
+  <script src="js/journal.js?v=25.5"></script>
+  <script src="js/alerts.js?v=25.5"></script>
+  <script src="js/app.js?v=25.5"></script>
 
   <script>
     // Bybit Subtabs Switcher (Grafico, Panoramica, Dati, Alimentazione)
@@ -3748,6 +3778,23 @@
             <button class="bybit-preset-btn" onclick="BybitChartSettings.setHeight(1000)">1000px</button>
             <button class="bybit-preset-btn" onclick="BybitChartSettings.setHeight(1400)">1400px</button>
             <button class="bybit-preset-btn" style="color:#fcd535; border-color:#fcd535;" onclick="BybitChartSettings.toggleFullScreen()">⛶ Schermo Intero</button>
+          </div>
+        </div>
+
+        <!-- GROUP 3B: TWIN VOLUME FOOTPRINT CHART HEIGHT SLIDER & NUMERIC INPUT -->
+        <div class="bybit-slider-box" style="margin-top:10px; border-color:rgba(16,185,129,0.4);">
+          <div class="bybit-slider-header">
+            <span style="color:#00f2a1;">🧱 Altezza Grafico Gemello Volumi &amp; Blocchi 1s</span>
+            <span id="twin-modal-slider-val-lbl" class="bybit-slider-badge" style="background:rgba(16,185,129,0.2); color:#00f2a1; border-color:#10b981;">460px</span>
+          </div>
+          <input type="range" id="twin-modal-chart-height-slider" class="bybit-range-input" min="180" max="1600" step="10" value="460" oninput="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(this.value)">
+          <div class="bybit-preset-btn-group">
+            <button class="bybit-preset-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(260)">260px</button>
+            <button class="bybit-preset-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(380)">380px</button>
+            <button class="bybit-preset-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(520)">520px</button>
+            <button class="bybit-preset-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(750)">750px</button>
+            <button class="bybit-preset-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(1000)">1000px</button>
+            <button class="bybit-preset-btn" onclick="if(window.OrderFlowEngine) OrderFlowEngine.setTwinChartHeight(1400)">1400px</button>
           </div>
         </div>
 

@@ -3334,7 +3334,7 @@ window.BybitChartSettings = {
     }
   },
 
-  applyHeight(px, save = true) {
+  applyHeight(px, save = true, syncTwin = false) {
     const vp = document.querySelector('.chart-viewport-wrapper');
     const c1 = document.getElementById('chart-container');
     if (vp) {
@@ -3347,17 +3347,8 @@ window.BybitChartSettings = {
       c1.style.setProperty('min-height', `${px}px`, 'important');
       c1.style.setProperty('max-height', 'none', 'important');
     }
-    const twinVp = document.getElementById('twin-footprint-viewport-wrapper');
-    const twinC1 = document.getElementById('twin-footprint-chart-container');
-    if (twinVp) {
-      twinVp.style.setProperty('height', `${px}px`, 'important');
-      twinVp.style.setProperty('min-height', `${px}px`, 'important');
-      twinVp.style.setProperty('max-height', 'none', 'important');
-    }
-    if (twinC1) {
-      twinC1.style.setProperty('height', `${px}px`, 'important');
-      twinC1.style.setProperty('min-height', `${px}px`, 'important');
-      twinC1.style.setProperty('max-height', 'none', 'important');
+    if (syncTwin && window.OrderFlowEngine && typeof window.OrderFlowEngine.setTwinChartHeight === 'function') {
+      window.OrderFlowEngine.setTwinChartHeight(px, save);
     }
     document.querySelectorAll('.bybit-h-quick-btn, .mobile-h-pill').forEach(btn => {
       const txt = (btn.textContent || '').replace('px', '').trim();

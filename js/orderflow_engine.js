@@ -12,6 +12,9 @@ const OrderFlowEngine = {
   twinVwapSeries: null,
   twinEma9Series: null,
   _isSyncingTwinRange: false,
+  twinChartHeight: 460,
+  twinIsFullScreen: false,
+  _splittersAttached: false,
 
   footprintSettings: {
     imbalanceRatio: 2.6,     // 260% ratio for buying/selling imbalance
@@ -432,6 +435,7 @@ const OrderFlowEngine = {
     });
 
     // Base candlestick series (semi-transparent so Footprint Blocks & Center Stem shine clearly)
+    this.initTwinHeightAndSplitters();
     this.twinCandleSeries = this.twinChart.addCandlestickSeries({
       upColor: 'rgba(0, 242, 161, 0.18)',
       downColor: 'rgba(255, 69, 96, 0.18)',
@@ -548,6 +552,184 @@ const OrderFlowEngine = {
     }
   },
 
+  initTwinHeightAndSplitters() {
+    try {
+      const savedH = localStorage.getItem('tpu_twin_footprint_chart_height');
+      if (savedH) {
+        this.twinChartHeight = Math.max(180, Math.min(1600, parseInt(savedH, 10) || 460));
+      } else if (window.BybitChartSettings && window.BybitChartSettings.currentHeight) {
+        this.twinChartHeight = window.BybitChartSettings.currentHeight;
+      } else {
+        this.twinChartHeight = (window.innerWidth < 768) ? 420 : 480;
+      }
+      this.setTwinChartHeight(this.twinChartHeight, false);
+    } catch (e) {}
+
+    if (this._splittersAttached) return;
+    this._splittersAttached = true;
+
+    const attachDrag = (splitterId, mode) => {
+      const el = document.getElementById(splitterId);
+      if (!el) return;
+
+      let startY = 0;
+      let startMainH = 460;
+      let startTwinH = 460;
+      let dragging = false;
+
+      const onStart = (clientY) => {
+        dragging = true;
+        startY = clientY;
+        const mainVp = document.querySelector('.chart-viewport-wrapper');
+        const twinVp = document.getElementById('twin-footprint-viewport-wrapper');
+        startMainH = mainVp ? (mainVp.clientHeight || 460) : 460;
+        startTwinH = twinVp ? (twinVp.clientHeight || this.twinChartHeight || 460) : 460;
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'ns-resize';
+      };
+
+      const onMove = (clientY) => {
+        if (!dragging) return;
+        const dy = clientY - startY;
+        if (mode === 'central') {
+          // Central splitter: dragging down increases upper chart height (or if Shift/Alt held, inversely adjusts both)
+          // Standard intuitive behavior: dragging central handle resizes upper chart & keeps twin chart responsive, or adjusts twin chart
+          const newMainH = Math.max(200, Math.min(1600, Math.round(startMainH + dy)));
+          if (window.BybitChartSettings) {
+            window.BybitChartSettings.applyHeight(newMainH, false, false);
+          }
+        } else {
+          // Bottom splitter: directly resizes Twin Volume Footprint chart
+          const newTwinH = Math.max(180, Math.min(1600, Math.round(startTwinH + dy)));
+          this.setTwinChartHeight(newTwinH, false);
+        }
+      };
+
+      const onEnd = () => {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        const mainVp = document.querySelector('.chart-viewport-wrapper');
+        if (mode === 'central' && mainVp && window.BybitChartSettings) {
+          window.BybitChartSettings.currentHeight = mainVp.clientHeight;
+          try { localStorage.setItem('tpu_bybit_chart_height', String(mainVp.clientHeight)); } catch (e) {}
+        } else {
+          try { localStorage.setItem('tpu_twin_footprint_chart_height', String(this.twinChartHeight)); } catch (e) {}
+        }
+        if (typeof window.resizeAllCharts === 'function') window.resizeAllCharts();
+      };
+
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        onStart(e.clientY);
+        const moveListener = (ev) => onMove(ev.clientY);
+        const upListener = () => {
+          window.removeEventListener('mousemove', moveListener);
+          window.removeEventListener('mouseup', upListener);
+          onEnd();
+        };
+        window.addEventListener('mousemove', moveListener);
+        window.addEventListener('mouseup', upListener);
+      });
+
+      el.addEventListener('touchstart', (e) => {
+        if (!e.touches || !e.touches.length) return;
+        onStart(e.touches[0].clientY);
+        const touchMove = (ev) => {
+          if (ev.touches && ev.touches.length) onMove(ev.touches[0].clientY);
+        };
+        const touchEnd = () => {
+          window.removeEventListener('touchmove', touchMove);
+          window.removeEventListener('touchend', touchEnd);
+          onEnd();
+        };
+        window.addEventListener('touchmove', touchMove, { passive: true });
+        window.addEventListener('touchend', touchEnd);
+      }, { passive: true });
+    };
+
+    attachDrag('splitter-twin-central', 'central');
+    attachDrag('splitter-twin-bottom', 'bottom');
+  },
+
+  setTwinChartHeight(px, save = true) {
+    const val = Math.max(180, Math.min(1600, parseInt(px, 10) || 460));
+    this.twinChartHeight = val;
+    this.twinIsFullScreen = false;
+
+    const twinVp = document.getElementById('twin-footprint-viewport-wrapper');
+    const twinC1 = document.getElementById('twin-footprint-chart-container');
+    if (twinVp) {
+      twinVp.style.setProperty('height', `${val}px`, 'important');
+      twinVp.style.setProperty('min-height', `${val}px`, 'important');
+      twinVp.style.setProperty('max-height', 'none', 'important');
+    }
+    if (twinC1) {
+      twinC1.style.setProperty('height', `${val}px`, 'important');
+      twinC1.style.setProperty('min-height', `${val}px`, 'important');
+      twinC1.style.setProperty('max-height', 'none', 'important');
+    }
+
+    const numInput = document.getElementById('twin-fp-height-num-input');
+    if (numInput && document.activeElement !== numInput) numInput.value = val;
+
+    const inlineSlider = document.getElementById('twin-fp-height-inline-slider');
+    if (inlineSlider) inlineSlider.value = val;
+
+    const modalSlider = document.getElementById('twin-modal-chart-height-slider');
+    if (modalSlider) modalSlider.value = val;
+
+    const modalLbl = document.getElementById('twin-modal-slider-val-lbl');
+    if (modalLbl) modalLbl.textContent = `${val}px`;
+
+    document.querySelectorAll('.twin-h-quick-btn').forEach(btn => {
+      const t = parseInt((btn.textContent || '').trim(), 10);
+      if (t === val) {
+        btn.style.background = 'rgba(0, 242, 161, 0.25)';
+        btn.style.borderColor = '#00f2a1';
+        btn.style.color = '#00f2a1';
+      } else {
+        btn.style.background = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }
+    });
+
+    if (this.twinChart && twinC1 && twinC1.clientWidth > 10) {
+      try {
+        this.twinChart.resize(twinC1.clientWidth, val);
+        const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+        if (twinCanvas && this.twinFootprintChartVisible) {
+          this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
+        }
+      } catch (e) {}
+    }
+
+    if (save) {
+      try {
+        localStorage.setItem('tpu_twin_footprint_chart_height', String(val));
+      } catch (e) {}
+    }
+  },
+
+  adjustTwinChartHeight(deltaPx) {
+    const nextH = Math.max(180, Math.min(1600, (this.twinChartHeight || 460) + (parseInt(deltaPx, 10) || 0)));
+    this.setTwinChartHeight(nextH, true);
+  },
+
+  toggleTwinFullScreen() {
+    this.twinIsFullScreen = !this.twinIsFullScreen;
+    if (this.twinIsFullScreen) {
+      const fullH = Math.max(540, window.innerHeight - 120);
+      this.setTwinChartHeight(fullH, false);
+      if (window.showToast) window.showToast(`⛶ Grafico Gemello Volumi 1s a Schermo Intero (${fullH}px)`, 'info');
+    } else {
+      const saved = parseInt(localStorage.getItem('tpu_twin_footprint_chart_height'), 10) || 460;
+      this.setTwinChartHeight(saved, true);
+    }
+  },
+
   toggleTwinFootprintChart(forceState) {
     if (typeof forceState === 'boolean') {
       this.twinFootprintChartVisible = forceState;
@@ -558,6 +740,10 @@ const OrderFlowEngine = {
     const section = document.getElementById('twin-footprint-chart-section');
     if (section) {
       section.style.display = this.twinFootprintChartVisible ? 'block' : 'none';
+    }
+    const centralSplit = document.getElementById('splitter-twin-central');
+    if (centralSplit) {
+      centralSplit.style.display = this.twinFootprintChartVisible ? 'flex' : 'none';
     }
 
     const btn = document.getElementById('btn-toggle-twin-footprint');
