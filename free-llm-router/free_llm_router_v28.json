@@ -1,0 +1,99 @@
+{
+  "version": "28.0.0-INFINITE-FREE-LLM-ROUTER",
+  "description": "Router Multi-Modello 100% Gratuito con failover automatico anti-429 su 7 bacini gratuiti + modelli interni Antigravity.",
+  "internal_antigravity_fallback_order": [
+    "Gemini 4 Hydrogen (Medium)",
+    "Claude Sonnet 5.5 (Medium)",
+    "Claude Opus 5.5 (Medium)",
+    "Gemini 3.8 Flash (Medium)",
+    "GPT-OSS 120B (Medium)"
+  ],
+  "free_external_providers_pool": [
+    {
+      "id": "openrouter_free_pool",
+      "name": "OpenRouter Free Models (:free Nativo)",
+      "base_url": "https://openrouter.ai/api/v1",
+      "signup_url": "https://openrouter.ai/settings/keys",
+      "cost": "0.00 EUR (100% Free Forever su modelli :free)",
+      "models": [
+        "deepseek/deepseek-r1:free",
+        "deepseek/deepseek-chat-v3-0324:free",
+        "qwen/qwen-2.5-coder-32b-instruct:free",
+        "qwen/qwq-32b:free",
+        "qwen/qwen3-235b-a22b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemini-2.5-pro-exp-03-25:free"
+      ]
+    },
+    {
+      "id": "groq_lpu_free",
+      "name": "Groq Cloud Free LPU (800 tok/s autorinnovante)",
+      "base_url": "https://api.groq.com/openai/v1",
+      "signup_url": "https://console.groq.com/keys",
+      "cost": "0.00 EUR (Quota giornaliera gratuita autorinnovante)",
+      "models": [
+        "qwen-qwq-32b",
+        "qwen-2.5-coder-32b",
+        "deepseek-r1-distill-llama-70b",
+        "llama-3.3-70b-versatile"
+      ]
+    },
+    {
+      "id": "cerebras_free",
+      "name": "Cerebras Wafer-Scale Free (1M tok/giorno @ 2000 tok/s)",
+      "base_url": "https://api.cerebras.ai/v1",
+      "signup_url": "https://cloud.cerebras.ai/",
+      "cost": "0.00 EUR (1.000.000 token/giorno gratuiti)",
+      "models": [
+        "qwen-3-32b",
+        "llama-3.3-70b",
+        "deepseek-r1-distill-llama-70b"
+      ]
+    },
+    {
+      "id": "mistral_codestral_free",
+      "name": "Mistral Codestral Free (Experiment Plan Coding)",
+      "base_url": "https://api.mistral.ai/v1",
+      "signup_url": "https://console.mistral.ai/codestral",
+      "cost": "0.00 EUR (Codestral gratuito per sviluppo)",
+      "models": [
+        "codestral-latest"
+      ]
+    },
+    {
+      "id": "github_models_free",
+      "name": "GitHub Models Free (Token GitHub locale my-lap)",
+      "base_url": "https://models.inference.ai.azure.com",
+      "signup_url": "https://github.com/marketplace/models",
+      "cost": "0.00 EUR (Incluso con account GitHub)",
+      "models": [
+        "DeepSeek-R1",
+        "Codestral-2501",
+        "gpt-4o-mini"
+      ]
+    },
+    {
+      "id": "google_aistudio_free",
+      "name": "Google AI Studio Free Tier",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "signup_url": "https://aistudio.google.com/apikey",
+      "cost": "0.00 EUR (Free Tier autorinnovante)",
+      "models": [
+        "gemini-2.5-pro-exp-03-25",
+        "gemini-2.5-flash"
+      ]
+    },
+    {
+      "id": "ollama_local_unlimited",
+      "name": "Ollama / LM Studio Locale Illimitato",
+      "base_url": "http://localhost:11434/v1",
+      "signup_url": "https://ollama.com/download",
+      "cost": "0.00 EUR (Zero limiti, 100% offline/locale)",
+      "models": [
+        "qwen2.5-coder:32b",
+        "deepseek-r1:14b",
+        "qwen3:14b"
+      ]
+    }
+  ]
+}
