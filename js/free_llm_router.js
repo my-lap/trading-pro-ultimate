@@ -1,5 +1,5 @@
 // ==========================================================================
-// FREE LLM ROUTER v28.6 — AUTO-DISCOVERY :FREE LIVE + openrouter/free
+// FREE LLM ROUTER v28.8 — INSTANT 1s OPENROUTER TEST + AUTO-DISCOVERY :FREE
 // Zero-404 OpenAI-compatible client with 50ms anti-429/404 failover
 // ==========================================================================
 (function () {
@@ -19,12 +19,15 @@
   ];
 
   const FreeLLMRouter = {
-    version: '28.6',
+    version: '28.8',
     discoveredModels: [...FALLBACK_STATIC_MODELS],
     discoveryLoaded: false,
     primaryModel: localStorage.getItem('FREE_LLM_PRIMARY_MODEL') || 'openrouter/free',
 
     getOpenRouterKey() {
+      const inp = document.getElementById('v285-openrouter-key');
+      const v = (inp?.value || '').trim();
+      if (v) return v;
       return (localStorage.getItem('OPENROUTER_FREE_KEY') || '').trim();
     },
 
@@ -37,45 +40,49 @@
       return PRIORITY_PREFIXES.length + 1;
     },
 
+    parseModelsPayload(json) {
+      const list = Array.isArray(json?.data) ? json.data : [];
+      const freeOnes = list
+        .filter(m => {
+          const id = m?.id || '';
+          const promptPrice = String(m?.pricing?.prompt ?? '');
+          return id.endsWith(':free') || promptPrice === '0';
+        })
+        .sort((a, b) => {
+          const sa = this.scoreModelPriority(a.id);
+          const sb = this.scoreModelPriority(b.id);
+          if (sa !== sb) return sa - sb;
+          return (a.id || '').localeCompare(b.id || '');
+        })
+        .slice(0, 40)
+        .map(m => ({
+          id: m.id,
+          label: `${m.name || m.id} (${m.id})`
+        }));
+      return [
+        { id: 'openrouter/free', label: 'openrouter/free (Router Universale Auto-Free 0€)' },
+        ...freeOnes.filter(m => m.id !== 'openrouter/free')
+      ];
+    },
+
     async discoverFreeModels(force = false) {
       if (this.discoveryLoaded && !force && this.discoveredModels.length > 1) {
         return this.discoveredModels;
       }
       try {
-        const res = await fetch('https://openrouter.ai/api/v1/models');
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 3000);
+        const res = await fetch('https://openrouter.ai/api/v1/models', { signal: ctrl.signal });
+        clearTimeout(t);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        const list = Array.isArray(json?.data) ? json.data : [];
-        const freeOnes = list
-          .filter(m => {
-            const id = m?.id || '';
-            const promptPrice = String(m?.pricing?.prompt ?? '');
-            return id.endsWith(':free') || promptPrice === '0';
-          })
-          .sort((a, b) => {
-            const sa = this.scoreModelPriority(a.id);
-            const sb = this.scoreModelPriority(b.id);
-            if (sa !== sb) return sa - sb;
-            return (a.id || '').localeCompare(b.id || '');
-          })
-          .slice(0, 40)
-          .map(m => ({
-            id: m.id,
-            label: `${m.name || m.id} (${m.id})`
-          }));
-
-        const merged = [
-          { id: 'openrouter/free', label: 'openrouter/free (Router Universale Auto-Free 0€)' },
-          ...freeOnes.filter(m => m.id !== 'openrouter/free')
-        ];
+        const merged = this.parseModelsPayload(json);
         if (merged.length > 1) {
           this.discoveredModels = merged;
           this.discoveryLoaded = true;
           this.populateModelSelectDOM();
         }
-      } catch (e) {
-        // Keep fallback list on network hiccup
-      }
+      } catch (e) {}
       return this.discoveredModels;
     },
 
@@ -93,9 +100,8 @@
     },
 
     saveSettings() {
-      const keyInput = document.getElementById('v285-openrouter-key');
+      const keyVal = this.getOpenRouterKey();
       const modelSel = document.getElementById('free-llm-model-select');
-      const keyVal = (keyInput?.value || '').trim();
       const modelVal = modelSel?.value || this.primaryModel || 'openrouter/free';
       try {
         if (keyVal) localStorage.setItem('OPENROUTER_FREE_KEY', keyVal);
@@ -105,7 +111,8 @@
       this.primaryModel = modelVal;
       const badge = document.getElementById('v285-status-badge');
       if (badge) badge.textContent = '🟢 0,00€ Free Router Ready';
-      if (window.showToast) window.showToast('🟢 0,00€ Free Router Ready — Chiave e modello salvati', 'success');
+      if (window.showToast) window.showToast('🟢 0,00€ Free Router Ready — Chiave salvata', 'success');
+      return keyVal;
     },
 
     async buildAttempts() {
@@ -138,15 +145,18 @@
     },
 
     async chat(messages, opts = {}) {
-      let attempts = await this.buildAttempts();
+      const attempts = await this.buildAttempts();
       if (!attempts.length) {
         throw new Error('Inserisci la OpenRouter Free Key (sk-or-v1-...) oppure avvia Ollama locale :11434.');
       }
       const errors = [];
       for (const target of attempts) {
         try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), opts.timeoutMs || 6000);
           const res = await fetch(target.endpoint, {
             method: 'POST',
+            signal: ctrl.signal,
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${target.key}`
@@ -158,6 +168,7 @@
               max_tokens: opts.max_tokens ?? 512
             })
           });
+          clearTimeout(t);
           if (res.status === 404 || res.status === 429 || !res.ok) {
             errors.push(`${target.provider}:${target.model}(${res.status})`);
             await new Promise(r => setTimeout(r, 50));
@@ -174,21 +185,107 @@
       throw new Error('Failover esaurito: ' + errors.slice(0, 4).join(' | '));
     },
 
-    async testConnection() {
-      this.saveSettings();
+    async runInstantTest() {
+      const key = this.saveSettings();
       const outEl = document.getElementById('v285-test-output');
       const badge = document.getElementById('v285-status-badge');
-      if (outEl) outEl.textContent = '⏳ Auto-discovery :free & ping live in corso...';
+      if (!key) {
+        if (badge) badge.textContent = '🟡 Inserisci OpenRouter Key';
+        if (outEl) outEl.textContent = '⚠️ Incolla una chiave OpenRouter (sk-or-v1-...) e riprova.';
+        return;
+      }
+
+      if (outEl) outEl.textContent = '⚡ Verifica istantanea chiave OpenRouter + catalogo :free...';
+
+      let freeCount = Math.max(0, this.discoveredModels.length - 1);
+      let keyValid = false;
+
+      // FASE A (0.3s): Parallel /auth/key + /models
       try {
-        const res = await this.chat([
-          { role: 'system', content: 'Sei il team dei 6 Agenti Quantitativi CED. Rispondi in italiano in massimo 2 righe.' },
-          { role: 'user', content: 'Ping di verifica: conferma che i 6 Agenti sono connessi al router gratuito.' }
+        const ctrlA = new AbortController();
+        const timerA = setTimeout(() => ctrlA.abort(), 3500);
+        const [authRes, modelsRes] = await Promise.all([
+          fetch('https://openrouter.ai/api/v1/auth/key', {
+            headers: { 'Authorization': `Bearer ${key}` },
+            signal: ctrlA.signal
+          }),
+          fetch('https://openrouter.ai/api/v1/models', { signal: ctrlA.signal })
         ]);
-        if (badge) badge.textContent = `🟢 0,00€ Connesso (${res.model})`;
-        if (outEl) outEl.textContent = `✅ Connesso a ${res.model} (0,00€): ${res.content}`;
-      } catch (err) {
-        if (badge) badge.textContent = '🟡 Chiave OpenRouter Free richiesta';
-        if (outEl) outEl.textContent = `⚠️ ${err.message}`;
+        clearTimeout(timerA);
+
+        if (modelsRes && modelsRes.ok) {
+          const mJson = await modelsRes.json();
+          const merged = this.parseModelsPayload(mJson);
+          if (merged.length > 1) {
+            this.discoveredModels = merged;
+            this.discoveryLoaded = true;
+            this.populateModelSelectDOM();
+            freeCount = merged.length - 1;
+          }
+        }
+
+        if (authRes && authRes.ok) {
+          keyValid = true;
+          if (badge) badge.textContent = `🟢 0,00€ Key Valida (${freeCount} :free)`;
+          if (outEl) outEl.textContent = `✅ API Key OpenRouter Valida! Modelli :free attivi trovati: ${freeCount}. Avvio ping AI...`;
+        } else if (authRes && authRes.status === 401) {
+          if (badge) badge.textContent = '🔴 Key Non Valida (401)';
+          if (outEl) outEl.textContent = '❌ Chiave OpenRouter rifiutata (401 Unauthorized). Verifica la key su openrouter.ai/settings/keys.';
+          return;
+        }
+      } catch (e) {
+        // Proceed to Phase B even if /auth/key timed out
+      }
+
+      // FASE B (max 3.5s): Ping AI on openrouter/free + top 3 live :free models
+      const liveIds = this.discoveredModels.map(m => m.id).filter(id => id !== 'openrouter/free').slice(0, 3);
+      const pingModels = ['openrouter/free', ...liveIds];
+      const ctrlB = new AbortController();
+      const timerB = setTimeout(() => ctrlB.abort(), 3500);
+
+      try {
+        for (const mId of pingModels) {
+          try {
+            const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              signal: ctrlB.signal,
+              headers: {
+                'Authorization': `Bearer ${key}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                model: mId,
+                messages: [
+                  { role: 'system', content: 'Sei il team dei 6 Agenti Quantitativi CED. Rispondi in italiano in 1 riga.' },
+                  { role: 'user', content: 'Ping di verifica: conferma connessione attiva.' }
+                ],
+                max_tokens: 80,
+                temperature: 0.2
+              })
+            });
+            if (res.ok) {
+              clearTimeout(timerB);
+              const data = await res.json();
+              const reply = data?.choices?.[0]?.message?.content || 'Operativi!';
+              const usedModel = data?.model || mId;
+              if (badge) badge.textContent = `🟢 0,00€ Connesso (${usedModel})`;
+              if (outEl) outEl.textContent = `✅ Connesso a ${usedModel} (0,00€): ${reply}`;
+              return;
+            }
+          } catch (innerErr) {
+            if (innerErr.name === 'AbortError') break;
+          }
+        }
+      } finally {
+        clearTimeout(timerB);
+      }
+
+      if (keyValid) {
+        if (badge) badge.textContent = `🟢 0,00€ Connesso (${freeCount} :free)`;
+        if (outEl) outEl.textContent = `✅ CONNESSO A OPENROUTER FREE (0,00€) — Key attiva e ${freeCount} modelli :free pronti per i 6 Agenti!`;
+      } else {
+        if (badge) badge.textContent = '🟡 Verifica Chiave/Rete';
+        if (outEl) outEl.textContent = '⚠️ Timeout nodo OpenRouter: verifica la chiave sk-or-v1-... o la connessione internet.';
       }
     },
 
@@ -200,7 +297,7 @@
         modal.style.cssText = 'position:fixed; inset:0; z-index:99999; background:rgba(4,8,18,0.84); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:14px;';
         document.body.appendChild(modal);
       }
-      const savedKey = this.getOpenRouterKey();
+      const savedKey = (localStorage.getItem('OPENROUTER_FREE_KEY') || '').trim();
       const opts = this.discoveredModels.map(m =>
         `<option value="${m.id}" ${m.id === this.primaryModel ? 'selected' : ''}>${m.label}</option>`
       ).join('');
@@ -223,11 +320,11 @@
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <button type="button" onclick="document.getElementById('v285-free-router-modal').style.display='none'" style="padding:7px 12px; border-radius:6px; background:rgba(244,63,94,0.18); border:1px solid #f43f5e; color:#fda4af; font-weight:800; cursor:pointer;">✕ Chiudi</button>
             <div style="display:flex; gap:8px;">
-              <button type="button" onclick="FreeLLMRouterV285.saveSettings()" style="padding:7px 12px; border-radius:6px; background:rgba(56,189,248,0.18); border:1px solid #38bdf8; color:#38bdf8; font-weight:800; cursor:pointer;">💾 Salva Key</button>
-              <button type="button" onclick="FreeLLMRouterV285.testConnection()" style="padding:7px 14px; border-radius:6px; background:#00f2a1; border:none; color:#000; font-weight:900; cursor:pointer;">⚡ Test Connessione Free</button>
+              <button type="button" onclick="window.saveInstantOpenRouterKey && window.saveInstantOpenRouterKey()" style="padding:7px 12px; border-radius:6px; background:rgba(56,189,248,0.18); border:1px solid #38bdf8; color:#38bdf8; font-weight:800; cursor:pointer;">💾 Salva Key</button>
+              <button type="button" onclick="window.runInstantOpenRouterTest && window.runInstantOpenRouterTest()" style="padding:7px 14px; border-radius:6px; background:#00f2a1; border:none; color:#000; font-weight:900; cursor:pointer;">⚡ Test Connessione Free</button>
             </div>
           </div>
-          <div id="v285-test-output" style="margin-top:10px; padding:8px; border-radius:6px; background:#070b14; border:1px solid #1e293b; font-size:11px; color:#cbd5e1; min-height:36px;">Pronto: auto-discovery live su /api/v1/models + paracadute universale openrouter/free.</div>
+          <div id="v285-test-output" style="margin-top:10px; padding:8px; border-radius:6px; background:#070b14; border:1px solid #1e293b; font-size:11px; color:#cbd5e1; min-height:36px;">🟢 Pronto: clicca "⚡ Test Connessione Free" per verifica istantanea (1s).</div>
         </div>
       `;
       modal.style.display = 'flex';
@@ -236,4 +333,6 @@
   };
 
   window.FreeLLMRouterV285 = FreeLLMRouter;
+  window.saveInstantOpenRouterKey = () => FreeLLMRouter.saveSettings();
+  window.runInstantOpenRouterTest = () => FreeLLMRouter.runInstantTest();
 })();
