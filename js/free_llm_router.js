@@ -37,7 +37,7 @@
   ];
 
   const FreeLLMRouter = {
-    version: '29.0',
+    version: '29.6-qwen-top',
     discoveredModels: [...FALLBACK_STATIC_MODELS],
     discoveryLoaded: false,
     primaryModel: localStorage.getItem('FREE_LLM_PRIMARY_MODEL') || 'openrouter/free',
@@ -110,14 +110,23 @@
 
     renderModelOptionsHtml(selectedId) {
       const current = selectedId || this.primaryModel || 'openrouter/free';
-      const groups = new Map();
-      this.discoveredModels.forEach(m => {
-        const g = m.group || 'ALTRI MODELLI :FREE (0,00€)';
-        if (!groups.has(g)) groups.set(g, []);
+      const fixedOrder = [
+        'ROUTER UNIVERSALE',
+        'DEEPSEEK TOP SUITE (0,00€)',
+        'QWEN FULL SUITE (8B -> 235B — 0,00€)',
+        'ALTRI MODELLI :FREE LIVE (0,00€)'
+      ];
+      const groups = new Map(fixedOrder.map(g => [g, []]));
+      const seenIds = new Set();
+      [...DEFAULT_MODELS, ...this.discoveredModels].forEach(m => {
+        if (!m || !m.id || seenIds.has(m.id)) return;
+        seenIds.add(m.id);
+        const g = m.group && groups.has(m.group) ? m.group : 'ALTRI MODELLI :FREE LIVE (0,00€)';
         groups.get(g).push(m);
       });
       let html = '';
       groups.forEach((items, gName) => {
+        if (!items.length) return;
         if (gName === 'ROUTER UNIVERSALE') {
           items.forEach(m => { html += `<option value="${m.id}" ${m.id === current ? 'selected' : ''}>${m.label}</option>`; });
         } else {
