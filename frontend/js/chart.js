@@ -4411,7 +4411,11 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
     try {
       mainChart.timeScale().setVisibleLogicalRange(lockedRange);
       if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart) {
-        window.OrderFlowEngine.twinChart.timeScale().setVisibleLogicalRange(lockedRange);
+        if (window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.wideFootprintMode) {
+          window.OrderFlowEngine.applyTwinOptimalFootprintZoom();
+        } else {
+          window.OrderFlowEngine.twinChart.timeScale().setVisibleLogicalRange(lockedRange);
+        }
         const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
         if (twinCanvas && window.OrderFlowEngine.twinFootprintChartVisible) {
           window.OrderFlowEngine.drawFootprintBlocksOnCanvas(twinCanvas, window.OrderFlowEngine.twinChart, window.OrderFlowEngine.twinCandleSeries, true);

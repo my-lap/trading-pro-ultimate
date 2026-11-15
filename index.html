@@ -65,16 +65,16 @@
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   
   <!-- Terminal Stylesheet -->
-  <link rel="stylesheet" href="css/terminal.css?v=25.7">
+  <link rel="stylesheet" href="css/terminal.css?v=26.0">
   <link rel="stylesheet" href="css/master-suite.css?v=4">
 
   <link rel="stylesheet" href="css/supreme-suite.css">
   <link rel="stylesheet" href="css/portfolio.css">
   <link rel="stylesheet" href="css/news_newspaper.css">
   <link rel="stylesheet" href="css/cavaliere_memo.css">
-  <link rel="stylesheet" href="css/responsive_11_rules.css?v=25.7">
+  <link rel="stylesheet" href="css/responsive_11_rules.css?v=26.0">
   <link rel="stylesheet" href="css/charts_3d_depth.css">
-  <link rel="stylesheet" href="css/ced_v18_suite.css?v=25.7">
+  <link rel="stylesheet" href="css/ced_v18_suite.css?v=26.0">
 </head>
 <body>
   <!-- TOP MONITOR CONTROL BAR v18.0 (12 MONITOR THEMES + ERGONOMIC TOUCH-FIRST + 0°/90° LAYOUT) -->
@@ -964,9 +964,12 @@
             <!-- ========================================================================= -->
             <div id="twin-footprint-chart-section" style="width:100%; background:#070a12; position:relative;">
               <div class="subpane-header-bar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; padding:5px 10px; background:linear-gradient(90deg, rgba(16,185,129,0.16), rgba(15,23,42,0.98)); border-bottom:1px solid rgba(16,185,129,0.35);">
-                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:7px;">
-                  <span style="font-size:10.5px; font-weight:900; color:#00f2a1; letter-spacing:0.3px;">🧱📊 GRAFICO GEMELLO CANDELE VOLUMI &amp; BLOCCHI ORDINI (1s)</span>
-                  <span id="twin-fp-live-1s-badge" style="font-size:9.8px; font-family:var(--font-mono); color:#f8fafc; background:rgba(0,0,0,0.45); padding:1px 7px; border-radius:4px; border:1px solid rgba(255,255,255,0.12);">1s Live: sincronizzazione blocchi...</span>
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
+                  <span style="font-size:10.5px; font-weight:900; color:#00f2a1; letter-spacing:0.3px;">🧱📊 GRAFICO FOOTPRINT (BID x ASK • IMBALANCE 3x) + HEATMAP LIQUIDAZIONI (10x-100x) + OI &amp; CVD (1s)</span>
+                  <span id="twin-fp-live-1s-badge" style="font-size:9.5px; font-family:var(--font-mono); color:#f8fafc; background:rgba(0,0,0,0.55); padding:2px 7px; border-radius:4px; border:1px solid rgba(255,255,255,0.14);">1s Live: sincronizzazione Footprint...</span>
+                  <button type="button" id="btn-v26-footprint-spacing" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleFootprintWideMode()" style="padding:2px 8px; font-size:9.5px; font-weight:900; border-radius:4px; background:rgba(16,185,129,0.22); border:1px solid #00f2a1; color:#00f2a1; cursor:pointer;" title="Mantieni larghezza minima 74px per candela così i numeri Bid x Ask non si sovrappongono mai">🔍 Candele Larghe 74px (Zero Sovrapposizioni): ON</button>
+                  <button type="button" id="btn-v26-heatmap-toggle" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleLiquidationHeatmap()" style="padding:2px 8px; font-size:9.5px; font-weight:900; border-radius:4px; background:rgba(250,204,21,0.22); border:1px solid #facc15; color:#facc15; cursor:pointer;" title="Mostra/Nascondi Fasce Liquidation Heatmap 10x-25x-50x-100x">🧲 Heatmap 10x-100x: ON</button>
+                  <button type="button" id="btn-v26-squeeze-guide" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleSqueezeGuidePanel()" style="padding:2px 9px; font-size:9.5px; font-weight:900; border-radius:4px; background:linear-gradient(90deg, rgba(250,204,21,0.25), rgba(56,189,248,0.25)); border:1px solid #facc15; color:#fef08a; cursor:pointer; box-shadow:0 0 8px rgba(250,204,21,0.25);" title="Apri/Chiudi Guida Didattica & Scanner Live in 4 Fasi dello Short/Long Squeeze">🧲🔬 Guida &amp; Scanner Live: Footprint + Heatmap + Short Squeeze (4 Fasi)</button>
                 </div>
 
                 <!-- CONTROLLI ALTEZZA PRECISI DEL GRAFICO GEMELLO (TASTI NUMERICI + INPUT NUMERO + LEVETTA SLIDER) -->
@@ -990,6 +993,62 @@
                   <button type="button" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleTwinFootprintChart(false)" style="padding:2px 7px; font-size:9.5px; font-weight:800; border-radius:4px; background:rgba(244,63,94,0.15); border:1px solid #f43f5e; color:#fca5a5; cursor:pointer; margin-left:3px;" title="Spegni Grafico Gemello">✕ OFF</button>
                 </div>
               </div>
+              <!-- BARRA DIAGNOSTICA LIVE 4 FASI SHORT/LONG SQUEEZE + INTERPRETAZIONE OI & CVD -->
+              <div id="v26-squeeze-live-ribbon" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; padding:4px 10px; background:rgba(9,14,26,0.96); border-bottom:1px solid rgba(250,204,21,0.28); font-size:9.5px; font-family:var(--font-mono);">
+                <div id="v26-squeeze-stages-pills" style="display:flex; flex-wrap:wrap; align-items:center; gap:5px;">
+                  <span style="color:#facc15; font-weight:900;">⚡ SQUEEZE SCANNER (4 FASI):</span>
+                  <span class="v26-stage-pill">1. Heatmap 50x/100x</span>
+                  <span class="v26-stage-pill">2. Imbalance Ask ≥3x</span>
+                  <span class="v26-stage-pill">3. Crollo OI</span>
+                  <span class="v26-stage-pill">4. Assorbimento &amp; Short</span>
+                </div>
+                <div id="v26-oi-cvd-live-interpretation" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; color:#cbd5e1;">
+                  <span>OI: <b>--</b></span>
+                  <span>CVD: <b>--</b></span>
+                  <span>Liq. Forzate: <b>--</b></span>
+                </div>
+              </div>
+
+              <!-- BOX ESPLICATIVO & SCANNER LIVE DELLO SHORT SQUEEZE IN 4 FASI (APRIBILE CON TASTO) -->
+              <div id="v26-squeeze-guide-panel" style="display:none; padding:10px 12px; background:linear-gradient(180deg, rgba(12,19,34,0.98), rgba(7,10,18,0.98)); border-bottom:2px solid #facc15; color:#e2e8f0; font-size:10.5px;">
+                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.1);">
+                  <div style="font-size:12px; font-weight:900; color:#facc15; display:flex; align-items:center; gap:8px;">
+                    <span>🧲🔬 GUIDA ISTITUZIONALE &amp; SCANNER LIVE: FOOTPRINT (BID x ASK) + HEATMAP (10x-100x) + OI &amp; SHORT SQUEEZE</span>
+                    <span id="v26-guide-pattern-badge" style="background:rgba(0,242,161,0.18); border:1px solid #00f2a1; color:#00f2a1; padding:2px 8px; border-radius:4px; font-size:10px; font-family:var(--font-mono);">Monitor Live Attivo</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <button type="button" onclick="if(window.OrderFlowEngine) OrderFlowEngine.triggerSqueezeAutoTrade()" style="padding:3px 9px; font-size:10px; font-weight:900; border-radius:4px; background:rgba(0,242,161,0.2); border:1px solid #00f2a1; color:#00f2a1; cursor:pointer;">⚡ Invia Segnale Squeeze a Ordine / Auto-Trader</button>
+                    <button type="button" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleSqueezeGuidePanel(false)" style="padding:2px 8px; font-size:10px; font-weight:800; border-radius:4px; background:rgba(244,63,94,0.18); border:1px solid #f43f5e; color:#fca5a5; cursor:pointer;">✕ Chiudi Guida</button>
+                  </div>
+                </div>
+
+                <!-- Griglia Didattica 1: Bid x Ask + Imbalance 3x & Open Interest / Heatmap -->
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:8px; margin-bottom:8px;">
+                  <div style="background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.35); border-radius:6px; padding:8px 10px;">
+                    <div style="font-weight:900; color:#38bdf8; margin-bottom:4px; font-size:11px;">1️⃣ GRAFICO FOOTPRINT: COLONNA BID (SX) vs ASK (DX) &amp; IMBALANCE 3x</div>
+                    <ul style="margin:0; padding-left:15px; line-height:1.45; color:#cbd5e1; font-size:10px;">
+                      <li><b style="color:#ff6b81;">Colonna Sinistra (Bid — Rossi):</b> contratti venduti aggressivamente a mercato (<i>Sell Market</i> che colpiscono i compratori in attesa).</li>
+                      <li><b style="color:#2ed573;">Colonna Destra (Ask — Verdi):</b> contratti comprati aggressivamente a mercato (<i>Buy Market</i> che divorano i venditori sul book).</li>
+                      <li><b style="color:#fef08a;">Lettura Diagonale &amp; Imbalance (≥ 3x / 300%):</b> si confronta in diagonale <code>Bid</code> a un prezzo con <code>Ask</code> al livello subito superiore. Se uno supera l'altro di almeno <b>3 volte</b> (es. <code>40 x 300</code>), la cella si illumina in <b>verde/rosso neon</b>.</li>
+                      <li><b style="color:#f43f5e;">🛑 Assorbimento / Ask Svuotato:</b> quando in cima alla candela la colonna <code>Ask</code> si svuota (es. <code>450 x 12</code>), i compratori sono finiti e parte l'inversione.</li>
+                    </ul>
+                  </div>
+
+                  <div style="background:rgba(15,23,42,0.85); border:1px solid rgba(250,204,21,0.35); border-radius:6px; padding:8px 10px;">
+                    <div style="font-weight:900; color:#facc15; margin-bottom:4px; font-size:11px;">2️⃣ LIQUIDATION HEATMAP (10x-100x) + OPEN INTEREST (OI) + CVD</div>
+                    <ul style="margin:0; padding-left:15px; line-height:1.45; color:#cbd5e1; font-size:10px;">
+                      <li><b style="color:#facc15;">🧲 Liquidation Heatmap (Giallo Acceso):</b> mostra le fasce di prezzo dove si concentrano gli Stop-Loss e le liquidazioni forzate delle leve <b>10x, 25x, 50x e 100x</b>. Il prezzo è attratto magneticamente da queste fasce.</li>
+                      <li><b style="color:#00f2a1;">Prezzo ▲ + OI ▲ = 🟢 Nuovi Long Reali:</b> entra denaro fresco a sostegno del rialzo.</li>
+                      <li><b style="color:#fbbf24;">Prezzo ▲ + OI ▼ = ⚠️ Short Squeeze / Ricoperture:</b> il prezzo sale solo perché gli Short vengono liquidati e costretti a ricomprare (rialzo fragile, pronto a invertire!).</li>
+                      <li><b style="color:#38bdf8;">Delta &amp; CVD:</b> differenza netta <code>Ask - Bid</code> per candela e curva cumulativa della pressione reale a mercato.</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <!-- Griglia Didattica 2: Le 4 Fasi Live dello Short Squeeze -->
+                <div id="v26-squeeze-4stages-cards" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:7px;"></div>
+              </div>
+
               <div id="twin-footprint-viewport-wrapper" class="chart-viewport-wrapper" style="position:relative; width:100%; height:460px; overflow:hidden; background:#070a12;">
                 <div id="twin-footprint-chart-container" style="width:100%; height:100%;"></div>
                 <canvas id="twin-footprint-blocks-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></canvas>
@@ -1584,7 +1643,7 @@
 
       </div>
 
-      <!-- REAL-TIME 1-SECOND ELECTRONIC OPERATIONS LEDGER + LATERAL PROGRESS CHART v25.0 -->
+      <!-- REAL-TIME 1-SECOND ELECTRONIC OPERATIONS LEDGER + LATERAL PROGRESS CHART v26.0 -->
       <div id="v25-ledger-main-dock"></div>
 
       <!-- BOTTOM DOCK: BYBIT ACTIVE POSITIONS & ORDERS -->
@@ -3501,27 +3560,27 @@
   </div>
 
   <!-- Application Logic Scripts -->
-  <script src="js/auth.js?v=25.7"></script>
-  <script src="js/market_assets.js?v=25.7"></script>
-  <script src="js/market_live_feed.js?v=25.7"></script>
-  <script src="js/workspace_engine.js?v=25.7"></script>
-  <script src="js/api_manager.js?v=25.7"></script>
-  <script src="js/orderflow_engine.js?v=25.7"></script>
-  <script src="js/chart.js?v=25.7"></script>
-  <script src="js/bybit_engine.js?v=25.7"></script>
+  <script src="js/auth.js?v=26.0"></script>
+  <script src="js/market_assets.js?v=26.0"></script>
+  <script src="js/market_live_feed.js?v=26.0"></script>
+  <script src="js/workspace_engine.js?v=26.0"></script>
+  <script src="js/api_manager.js?v=26.0"></script>
+  <script src="js/orderflow_engine.js?v=26.0"></script>
+  <script src="js/chart.js?v=26.0"></script>
+  <script src="js/bybit_engine.js?v=26.0"></script>
   <script src="js/lib/jspdf.umd.min.js"></script>
-  <script src="js/report_engine.js?v=25.7"></script>
-  <script src="js/market_quantum_engine.js?v=25.7"></script>
-  <script src="js/casario_quant_engine.js?v=25.7"></script>
-  <script src="js/quant_engines.js?v=25.7"></script>
-  <script src="js/sector_rotation.js?v=25.7"></script>
-  <script src="js/optimal_engine.js?v=25.7"></script>
-  <script src="js/opportunity_scanner.js?v=25.7"></script>
-  <script src="js/skills.js?v=25.7"></script>
-  <script src="js/trading.js?v=25.7"></script>
-  <script src="js/journal.js?v=25.7"></script>
-  <script src="js/alerts.js?v=25.7"></script>
-  <script src="js/app.js?v=25.7"></script>
+  <script src="js/report_engine.js?v=26.0"></script>
+  <script src="js/market_quantum_engine.js?v=26.0"></script>
+  <script src="js/casario_quant_engine.js?v=26.0"></script>
+  <script src="js/quant_engines.js?v=26.0"></script>
+  <script src="js/sector_rotation.js?v=26.0"></script>
+  <script src="js/optimal_engine.js?v=26.0"></script>
+  <script src="js/opportunity_scanner.js?v=26.0"></script>
+  <script src="js/skills.js?v=26.0"></script>
+  <script src="js/trading.js?v=26.0"></script>
+  <script src="js/journal.js?v=26.0"></script>
+  <script src="js/alerts.js?v=26.0"></script>
+  <script src="js/app.js?v=26.0"></script>
 
   <script>
     // Bybit Subtabs Switcher (Grafico, Panoramica, Dati, Alimentazione)
@@ -3845,9 +3904,9 @@
   <script src="js/cavaliere_memo_engine.js"></script>
   <script src="js/web_design_agents_guild.js"></script>
   <script src="js/day_trader_skill_bridge.js"></script>
-  <script src="js/tpu_security_guard.js?v=25.7"></script>
-  <script src="js/marketing_erp_engine.js?v=25.7"></script>
-  <script src="js/rnd_autonomous_agents.js?v=25.7"></script>
-  <script src="js/trading_ced_suite_v18.js?v=25.7"></script>
+  <script src="js/tpu_security_guard.js?v=26.0"></script>
+  <script src="js/marketing_erp_engine.js?v=26.0"></script>
+  <script src="js/rnd_autonomous_agents.js?v=26.0"></script>
+  <script src="js/trading_ced_suite_v18.js?v=26.0"></script>
 </body>
 </html>
