@@ -846,7 +846,7 @@ const OrderFlowEngine = {
       }
 
       // 8. Classify Candle Block into the 4 Institutional Quadrants + Trapped Traders Detection
-      if (candlePocCluster && (i >= toIdx - 8)) {
+      if (candlePocCluster && (i >= toIdx - 18)) {
         const oiContractsDelta = Math.round((oiDeltaPct / 100) * baseOi);
         let priceActionState = 'HOLDING_ABOVE';
         if (candleDelta > 0 && oiContractsDelta > 0 && liveP < c.low) {
@@ -2035,7 +2035,7 @@ const OrderFlowEngine = {
     const summaryEl = document.getElementById('v27-scanner-summary-pills');
     if (!tbody) return;
 
-    const latest = blocks.slice(-6).reverse();
+    const latest = blocks.slice(-14).reverse();
     if (!latest.length) return;
 
     // Select highest-confidence block as Top Bot Signal (and adjust TP to Unfinished Business magnet if available)
