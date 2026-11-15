@@ -134,26 +134,35 @@ const OrderFlowEngine = {
     }
   },
 
-  // Ensure Twin Chart displays 12-16 wide candles (>= 74px each) when wideFootprintMode is ON
+  // Ensure ALL Charts (Main + Twin Footprint + Volume + RSI) share the EXACT SAME 1:1 LogicalRange!
   applyTwinOptimalFootprintZoom() {
-    if (!this.twinChart || !this.footprintSettings.wideFootprintMode) return;
     const candles = window.currentCandles || [];
     if (!candles.length) return;
-    const container = document.getElementById('twin-footprint-chart-container');
-    const cssW = (container && container.clientWidth) ? container.clientWidth : 960;
-    const usableW = Math.max(240, cssW - 150);
-    const targetCandles = Math.max(5, Math.min(15, Math.floor(usableW / this.footprintSettings.minCandleWidthPx)));
     const total = candles.length;
-    const rightSpace = 2.2;
-    const lockedRange = {
-      from: Math.max(0, total - targetCandles),
-      to: (total - 1) + rightSpace
-    };
-    this._isSyncingTwinRange = true;
-    try {
-      this.twinChart.timeScale().setVisibleLogicalRange(lockedRange);
-    } catch (e) {}
-    setTimeout(() => { this._isSyncingTwinRange = false; }, 25);
+    if (this.footprintSettings.wideFootprintMode) {
+      const container = document.getElementById('twin-footprint-chart-container') || document.getElementById('chart-container');
+      const cssW = (container && container.clientWidth) ? container.clientWidth : window.innerWidth;
+      const usableW = Math.max(220, cssW - 90);
+      const targetCandles = Math.max(5, Math.min(15, Math.floor(usableW / this.footprintSettings.minCandleWidthPx)));
+      const rightSpace = 2.5;
+      const lockedRange = {
+        from: Math.max(0, total - targetCandles),
+        to: (total - 1) + rightSpace
+      };
+      if (typeof window.syncAllChartsLogicalRange === 'function') {
+        window.syncAllChartsLogicalRange(lockedRange, true);
+      } else if (this.twinChart) {
+        this.twinChart.timeScale().setVisibleLogicalRange(lockedRange);
+      }
+    } else {
+      const lockedRange = {
+        from: Math.max(0, total - 85),
+        to: (total - 1) + 6
+      };
+      if (typeof window.syncAllChartsLogicalRange === 'function') {
+        window.syncAllChartsLogicalRange(lockedRange, true);
+      }
+    }
   },
 
   // 1. INSTITUTIONAL v26.0 FOOTPRINT LEVEL GENERATOR + DIAGONAL 3x IMBALANCE & ABSORPTION DETECTOR
@@ -918,18 +927,8 @@ const OrderFlowEngine = {
         if (this._isSyncingTwinRange || window._isUpdatingRealtimeTick || !range || !this.twinChart) return;
         this._isSyncingTwinRange = true;
         try {
-          if (this.footprintSettings.wideFootprintMode) {
-            // Keep wide 12-15 candle window anchored to the same right edge `range.to` as mainChart!
-            const container = document.getElementById('twin-footprint-chart-container');
-            const cssW = (container && container.clientWidth) ? container.clientWidth : 960;
-            const targetCandles = Math.max(5, Math.min(15, Math.floor(Math.max(240, cssW - 150) / this.footprintSettings.minCandleWidthPx)));
-            this.twinChart.timeScale().setVisibleLogicalRange({
-              from: range.to - targetCandles,
-              to: range.to
-            });
-          } else {
-            this.twinChart.timeScale().setVisibleLogicalRange(range);
-          }
+          // ALWAYS sync 1:1 with mainChart so X-axis timestamps & candles align pixel-for-pixel!
+          this.twinChart.timeScale().setVisibleLogicalRange(range);
           const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
           if (twinCanvas && this.twinFootprintChartVisible) {
             this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
@@ -941,18 +940,22 @@ const OrderFlowEngine = {
 
     this.twinChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
       if (this._isSyncingTwinRange || window._isUpdatingRealtimeTick || !range) return;
-      this._isSyncingTwinRange = true;
-      try {
-        const mc = window.mainChart || window.mainChartInstance;
-        if (mc && typeof mc.timeScale === 'function') {
-          mc.timeScale().setVisibleLogicalRange(range);
-        }
-        const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
-        if (twinCanvas && this.twinFootprintChartVisible) {
-          this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
-        }
-      } catch (e) {}
-      releaseTwinSync();
+      if (typeof window.syncAllChartsLogicalRange === 'function') {
+        window.syncAllChartsLogicalRange(range, true);
+      } else {
+        this._isSyncingTwinRange = true;
+        try {
+          const mc = window.mainChart || window.mainChartInstance;
+          if (mc && typeof mc.timeScale === 'function') {
+            mc.timeScale().setVisibleLogicalRange(range);
+          }
+          const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+          if (twinCanvas && this.twinFootprintChartVisible) {
+            this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
+          }
+        } catch (e) {}
+        releaseTwinSync();
+      }
     });
   },
 
@@ -990,11 +993,27 @@ const OrderFlowEngine = {
       low: c.low,
       close: c.close
     }));
+    const tfRaw = window.currentInterval || '15m';
+    const tfLower = tfRaw.toLowerCase();
+    const isHighTf = (tfLower === '1d' || tfLower === '1g' || tfLower === '1w' || tfLower === '1sett' || tfRaw === '1M' || tfLower === '1mese');
+    const isSeconds = (tfLower === '1s');
+
     try {
       this.twinCandleSeries.setData(formatted);
+      // Force right price scale autoScale reset so switching BTCUSDT -> ENAUSDT on iPhone/PC rescales Y-axis immediately!
+      this.twinChart.priceScale('right').applyOptions({
+        autoScale: true,
+        minimumWidth: 72,
+        scaleMargins: { top: 0.08, bottom: 0.16 }
+      });
+      this.twinChart.timeScale().applyOptions({
+        timeVisible: !isHighTf,
+        secondsVisible: isSeconds,
+        tickMarkFormatter: (time, tickMarkType, locale) => (typeof formatTimeScaleTick === 'function' ? formatTimeScaleTick(time, tickMarkType, locale, tfRaw) : '')
+      });
     } catch (e) {}
 
-    // Sync visible range (using Wide 74px Non-Overlapping Footprint Zoom when enabled)
+    // Unify 1:1 LogicalRange across mainChart, twinChart, volumeChart, momentumChart
     try {
       if (this.footprintSettings.wideFootprintMode) {
         this.applyTwinOptimalFootprintZoom();
@@ -1002,7 +1021,11 @@ const OrderFlowEngine = {
         const mc = window.mainChart || window.mainChartInstance;
         if (mc && typeof mc.timeScale === 'function') {
           const r = mc.timeScale().getVisibleLogicalRange();
-          if (r) this.twinChart.timeScale().setVisibleLogicalRange(r);
+          if (r && typeof window.syncAllChartsLogicalRange === 'function') {
+            window.syncAllChartsLogicalRange(r, false);
+          } else if (r) {
+            this.twinChart.timeScale().setVisibleLogicalRange(r);
+          }
         }
       }
     } catch (e) {}

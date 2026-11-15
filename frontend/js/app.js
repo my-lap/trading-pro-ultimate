@@ -300,7 +300,11 @@ async function selectAsset(symbol) {
   const initialPrice = baseline ? baseline.price : ((asset && asset.basePrice) ? asset.basePrice : 100);
   const defaultCurr = baseline ? baseline.currency : ((symbol.endsWith('.MI') || (asset && (asset.cat === 'eu_stock' || asset.cat === 'fr_stock' || asset.cat === 'de_stock'))) ? '€' : ((asset && asset.currency) ? asset.currency : '$'));
 
-  // Immediately set verified price to guarantee strict asset pricing isolation
+  // Immediately set verified price & clear stale candles to guarantee strict asset pricing isolation
+  window._switchingAssetInProgress = true;
+  window.currentCandlesSymbol = symbol;
+  window.currentCandles = [];
+  window.activeCandles = [];
   window.activePrice = initialPrice;
   window.currentLivePrice = initialPrice;
   window.activeCurrency = defaultCurr;
@@ -362,15 +366,17 @@ async function selectAsset(symbol) {
   }
 
   try {
-    await pollActiveQuote();
-  } catch(e) {
-    console.error('Error in pollActiveQuote:', e);
-  }
-
-  try {
     await loadCandleHistory();
   } catch(e) {
     console.error('Error in loadCandleHistory:', e);
+  } finally {
+    window._switchingAssetInProgress = false;
+  }
+
+  try {
+    await pollActiveQuote();
+  } catch(e) {
+    console.error('Error in pollActiveQuote:', e);
   }
 
   try {
@@ -844,6 +850,8 @@ async function loadCandleHistory() {
     window.activePrice = latestClose;
   }
 
+  candles.forEach(c => { c._symbol = symbol; });
+  window.currentCandlesSymbol = symbol;
   window.currentCandles = candles;
   window.activeCandles = candles;
 

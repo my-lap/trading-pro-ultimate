@@ -222,24 +222,80 @@ function applyTimeframeScaleOptions(tf) {
     tickMarkFormatter: (time, tickMarkType, locale) => formatTimeScaleTick(time, tickMarkType, locale, tfRaw)
   };
 
+  const isWideFp = !!(window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible && window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.wideFootprintMode);
+  if (isWideFp) {
+    const container = document.getElementById('twin-footprint-chart-container') || document.getElementById('chart-container');
+    const cssW = (container && container.clientWidth) ? container.clientWidth : window.innerWidth;
+    const minW = (window.OrderFlowEngine && window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.minCandleWidthPx) || 74;
+    const usableW = Math.max(220, cssW - 90);
+    visibleBars = Math.max(5, Math.min(15, Math.floor(usableW / minW)));
+    opts.rightOffset = 3;
+  } else {
+    opts.rightOffset = 6;
+  }
+
   try {
     mainChart.timeScale().applyOptions(opts);
+    if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart) {
+      window.OrderFlowEngine.twinChart.timeScale().applyOptions(opts);
+    }
     if (volumeChart) volumeChart.timeScale().applyOptions({ ...opts, visible: false });
     if (momentumChart) momentumChart.timeScale().applyOptions(opts);
+    if (typeof sub2Chart !== 'undefined' && sub2Chart) sub2Chart.timeScale().applyOptions(opts);
   } catch(e) {}
 
   const candles = window.currentCandles || [];
   if (candles.length > 0) {
-    const to = candles.length + 8;
+    const rightSpace = isWideFp ? 2.5 : 6;
+    const to = (candles.length - 1) + rightSpace;
     const from = Math.max(0, candles.length - visibleBars);
-    try {
-      mainChart.timeScale().setVisibleLogicalRange({ from, to });
-      if (volumeChart) volumeChart.timeScale().setVisibleLogicalRange({ from, to });
-      if (momentumChart) momentumChart.timeScale().setVisibleLogicalRange({ from, to });
-    } catch(e) {}
+    window.syncAllChartsLogicalRange({ from, to }, true);
   }
 }
 window.applyTimeframeScaleOptions = applyTimeframeScaleOptions;
+
+// Master 1:1 Logical Range Synchronizer across ALL 5 charts (Main, Twin Footprint, Volume, Momentum, Sub2)
+window.syncAllChartsLogicalRange = function(range, redrawOverlays = true) {
+  if (!range || typeof range.from !== 'number' || typeof range.to !== 'number') return;
+  const prevTickLock = window._isUpdatingRealtimeTick;
+  window._isUpdatingRealtimeTick = true;
+  isSyncingRange = true;
+  if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = true;
+  try {
+    if (mainChart && typeof mainChart.timeScale === 'function') {
+      mainChart.timeScale().setVisibleLogicalRange(range);
+    }
+    if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart && typeof window.OrderFlowEngine.twinChart.timeScale === 'function') {
+      window.OrderFlowEngine.twinChart.timeScale().setVisibleLogicalRange(range);
+    }
+    if (volumeChart && typeof volumeChart.timeScale === 'function') {
+      volumeChart.timeScale().setVisibleLogicalRange(range);
+    }
+    if (momentumChart && typeof momentumChart.timeScale === 'function') {
+      momentumChart.timeScale().setVisibleLogicalRange(range);
+    }
+    if (typeof sub2Chart !== 'undefined' && sub2Chart && typeof sub2Chart.timeScale === 'function' && window.currentCandles && window.currentCandles.length > 1) {
+      try { sub2Chart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+    }
+  } catch (e) {}
+  window._isUpdatingRealtimeTick = prevTickLock;
+  isSyncingRange = false;
+  if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = false;
+
+  if (redrawOverlays) {
+    if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart && window.OrderFlowEngine.twinFootprintChartVisible) {
+      const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+      if (twinCanvas) {
+        try {
+          window.OrderFlowEngine.drawFootprintBlocksOnCanvas(twinCanvas, window.OrderFlowEngine.twinChart, window.OrderFlowEngine.twinCandleSeries, true);
+        } catch (e) {}
+      }
+    }
+    if (window.OptimalEngine && window.OptimalEngine.volumeProfileVisible) {
+      try { window.OptimalEngine.renderVolumeProfileOverlay(); } catch (e) {}
+    }
+  }
+};
 
 function initMainChart() {
   const container = document.getElementById('chart-container');
@@ -697,50 +753,38 @@ function attachMultiChartSync() {
     }
   };
 
-  mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+  const syncFromSource = (sourceChart, range) => {
     if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
     isSyncingRange = true;
+    if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = true;
     try {
-      if (volumeChart && typeof volumeChart.timeScale === 'function') volumeChart.timeScale().setVisibleLogicalRange(range);
-      if (momentumChart && typeof momentumChart.timeScale === 'function') momentumChart.timeScale().setVisibleLogicalRange(range);
-      if (typeof sub2Chart !== 'undefined' && sub2Chart && typeof sub2Chart.timeScale === 'function' && window.currentCandles && window.currentCandles.length > 1) { try { sub2Chart.timeScale().setVisibleLogicalRange(range); } catch(e) {} }
+      if (sourceChart !== mainChart && mainChart && typeof mainChart.timeScale === 'function') mainChart.timeScale().setVisibleLogicalRange(range);
+      if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart && sourceChart !== window.OrderFlowEngine.twinChart) {
+        window.OrderFlowEngine.twinChart.timeScale().setVisibleLogicalRange(range);
+      }
+      if (sourceChart !== volumeChart && volumeChart && typeof volumeChart.timeScale === 'function') volumeChart.timeScale().setVisibleLogicalRange(range);
+      if (sourceChart !== momentumChart && momentumChart && typeof momentumChart.timeScale === 'function') momentumChart.timeScale().setVisibleLogicalRange(range);
+      if (typeof sub2Chart !== 'undefined' && sub2Chart && sourceChart !== sub2Chart && typeof sub2Chart.timeScale === 'function' && window.currentCandles && window.currentCandles.length > 1) {
+        try { sub2Chart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+      }
+      if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart && window.OrderFlowEngine.twinFootprintChartVisible) {
+        const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+        if (twinCanvas) {
+          window.OrderFlowEngine.drawFootprintBlocksOnCanvas(twinCanvas, window.OrderFlowEngine.twinChart, window.OrderFlowEngine.twinCandleSeries, true);
+        }
+      }
     } catch(e) {}
     releaseSync();
-  });
+    if (window.OrderFlowEngine) {
+      setTimeout(() => { window.OrderFlowEngine._isSyncingTwinRange = false; }, 16);
+    }
+  };
 
-  volumeChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-    if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
-    isSyncingRange = true;
-    try {
-      if (mainChart && typeof mainChart.timeScale === 'function') mainChart.timeScale().setVisibleLogicalRange(range);
-      if (momentumChart && typeof momentumChart.timeScale === 'function') momentumChart.timeScale().setVisibleLogicalRange(range);
-      if (typeof sub2Chart !== 'undefined' && sub2Chart && typeof sub2Chart.timeScale === 'function' && window.currentCandles && window.currentCandles.length > 1) { try { sub2Chart.timeScale().setVisibleLogicalRange(range); } catch(e) {} }
-    } catch(e) {}
-    releaseSync();
-  });
-
-  momentumChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-    if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
-    isSyncingRange = true;
-    try {
-      if (mainChart && typeof mainChart.timeScale === 'function') mainChart.timeScale().setVisibleLogicalRange(range);
-      if (volumeChart && typeof volumeChart.timeScale === 'function') volumeChart.timeScale().setVisibleLogicalRange(range);
-      if (sub2Chart && typeof sub2Chart.timeScale === 'function') sub2Chart.timeScale().setVisibleLogicalRange(range);
-    } catch(e) {}
-    releaseSync();
-  });
-
+  mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => syncFromSource(mainChart, range));
+  volumeChart.timeScale().subscribeVisibleLogicalRangeChange(range => syncFromSource(volumeChart, range));
+  momentumChart.timeScale().subscribeVisibleLogicalRangeChange(range => syncFromSource(momentumChart, range));
   if (typeof sub2Chart !== 'undefined' && sub2Chart && typeof sub2Chart.timeScale === 'function') {
-    sub2Chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
-      isSyncingRange = true;
-      try {
-        if (mainChart && typeof mainChart.timeScale === 'function') mainChart.timeScale().setVisibleLogicalRange(range);
-        if (volumeChart && typeof volumeChart.timeScale === 'function') volumeChart.timeScale().setVisibleLogicalRange(range);
-        if (momentumChart && typeof momentumChart.timeScale === 'function') momentumChart.timeScale().setVisibleLogicalRange(range);
-      } catch(e) {}
-      releaseSync();
-    });
+    sub2Chart.timeScale().subscribeVisibleLogicalRangeChange(range => syncFromSource(sub2Chart, range));
   }
 
   if (window.OrderFlowEngine) {
@@ -4272,15 +4316,18 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
   if (!price || isNaN(price) || price <= 0) return;
   if (!candleSeries || !window.currentCandles || !window.currentCandles.length) return;
 
-  // Strict symbol isolation: reject tick if symbol does not match active asset
+  // Guard against mid-switch asset transitions or cross-symbol ticks
+  if (window._switchingAssetInProgress) return;
+  if (window.currentCandlesSymbol && window.currentSymbol && window.currentCandlesSymbol !== window.currentSymbol) return;
   if (tickSym && window.currentSymbol && tickSym.toUpperCase().trim() !== window.currentSymbol.toUpperCase().trim()) {
     return;
   }
 
-  // Strict price scale sanity check: drop tick if price diverges by >50% from active asset scale
-  if (window.currentLivePrice && window.currentLivePrice > 0) {
-    const ratio = price / window.currentLivePrice;
-    if (ratio < 0.2 || ratio > 5.0) {
+  // Strict price scale sanity check: drop tick if price diverges by >50% from active asset or last candle
+  const refPrice = (window.currentCandles[window.currentCandles.length - 1]?.close) || window.currentLivePrice;
+  if (refPrice && refPrice > 0) {
+    const ratio = price / refPrice;
+    if (ratio < 0.25 || ratio > 4.0) {
       return;
     }
   }
@@ -4305,11 +4352,16 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
       prevRange = mainChart.timeScale().getVisibleLogicalRange();
     }
   } catch (e) {}
+  const isWideFpNow = !!(window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible && window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.wideFootprintMode);
+  const defaultSpan = isWideFpNow ? (window.innerWidth < 768 ? 6 : 13) : 85;
   const prevSpan = (prevRange && prevRange.to > prevRange.from)
-    ? Math.max(25, Math.min(180, prevRange.to - prevRange.from))
-    : 85;
-  // Determine if user is watching live right edge (or if chart drifted right due to old bug)
-  const isWatchingLiveEdge = !prevRange || (prevRange.to >= prevLen - 12);
+    ? Math.max(4, Math.min(220, prevRange.to - prevRange.from))
+    : defaultSpan;
+  const prevRightSpace = (prevRange && typeof prevRange.to === 'number')
+    ? Math.max(1.8, Math.min(12, prevRange.to - (prevLen - 1)))
+    : (isWideFpNow ? 2.5 : 6);
+  // Determine if user is watching live right edge
+  const isWatchingLiveEdge = !prevRange || (prevRange.to >= prevLen - 10);
 
   let updatedCandle = null;
   let isNewCandleRollover = false;
@@ -4401,35 +4453,19 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
     } catch(e) {}
   }
 
-  // PIN RIGHT-EDGE POSITION: New bars stay fixed at the right anchor while past bars slide smoothly left!
-  if (isWatchingLiveEdge && mainChart && typeof mainChart.timeScale === 'function') {
-    const totalBarsNow = window.currentCandles.length;
-    const fixedRightOffset = 8;
-    const lockedTo = (totalBarsNow - 1) + fixedRightOffset;
-    const lockedFrom = lockedTo - prevSpan;
-    const lockedRange = { from: lockedFrom, to: lockedTo };
-    try {
-      mainChart.timeScale().setVisibleLogicalRange(lockedRange);
-      if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart) {
-        if (window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.wideFootprintMode) {
-          window.OrderFlowEngine.applyTwinOptimalFootprintZoom();
-        } else {
-          window.OrderFlowEngine.twinChart.timeScale().setVisibleLogicalRange(lockedRange);
-        }
-        const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
-        if (twinCanvas && window.OrderFlowEngine.twinFootprintChartVisible) {
-          window.OrderFlowEngine.drawFootprintBlocksOnCanvas(twinCanvas, window.OrderFlowEngine.twinChart, window.OrderFlowEngine.twinCandleSeries, true);
-        }
-      }
-      if (volumeChart) volumeChart.timeScale().setVisibleLogicalRange(lockedRange);
-      if (momentumChart) momentumChart.timeScale().setVisibleLogicalRange(lockedRange);
-      if (sub2Chart) sub2Chart.timeScale().setVisibleLogicalRange(lockedRange);
-    } catch (e) {}
-  }
-
   window._isUpdatingRealtimeTick = false;
   isSyncingRange = false;
   if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = false;
+
+  // PIN RIGHT-EDGE POSITION: All 5 charts share the exact same 1:1 LogicalRange {from, to}!
+  if (isWatchingLiveEdge && typeof window.syncAllChartsLogicalRange === 'function') {
+    const totalBarsNow = window.currentCandles.length;
+    const lockedTo = (totalBarsNow - 1) + prevRightSpace;
+    const lockedFrom = lockedTo - prevSpan;
+    window.syncAllChartsLogicalRange({ from: lockedFrom, to: lockedTo }, true);
+  } else if (prevRange && typeof window.syncAllChartsLogicalRange === 'function') {
+    window.syncAllChartsLogicalRange(prevRange, true);
+  }
 
   // Update on-chart legend in real time (OHLC and percentages)
   try {
@@ -4481,6 +4517,8 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
 
 function onRealtimeKlineUpdate(klineData, tickSym) {
   if (!klineData || !candleSeries || !window.currentCandles || !window.currentCandles.length) return;
+  if (window._switchingAssetInProgress) return;
+  if (window.currentCandlesSymbol && window.currentSymbol && window.currentCandlesSymbol !== window.currentSymbol) return;
 
   // Strict symbol isolation: reject kline if symbol does not match active asset
   if (tickSym && window.currentSymbol && tickSym.toUpperCase().trim() !== window.currentSymbol.toUpperCase().trim()) {
@@ -4488,9 +4526,10 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
   }
 
   const cTest = parseFloat(klineData.close);
-  if (window.currentLivePrice && window.currentLivePrice > 0 && !isNaN(cTest) && cTest > 0) {
-    const ratio = cTest / window.currentLivePrice;
-    if (ratio < 0.2 || ratio > 5.0) {
+  const refPrice = (window.currentCandles[window.currentCandles.length - 1]?.close) || window.currentLivePrice;
+  if (refPrice && refPrice > 0 && !isNaN(cTest) && cTest > 0) {
+    const ratio = cTest / refPrice;
+    if (ratio < 0.25 || ratio > 4.0) {
       return;
     }
   }
@@ -4507,10 +4546,27 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
   let v = parseFloat(klineData.volume) || medVolK;
   if (v > maxAllowedK) v = Math.round(medVolK * 1.12);
 
+  const prevLen = window.currentCandles.length;
+  let prevRange = null;
+  try {
+    if (mainChart && typeof mainChart.timeScale === 'function') {
+      prevRange = mainChart.timeScale().getVisibleLogicalRange();
+    }
+  } catch(e) {}
+  const isWideFpNow = !!(window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible && window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.wideFootprintMode);
+  const defaultSpan = isWideFpNow ? (window.innerWidth < 768 ? 6 : 13) : 85;
+  const prevSpan = (prevRange && prevRange.to > prevRange.from)
+    ? Math.max(4, Math.min(220, prevRange.to - prevRange.from))
+    : defaultSpan;
+  const prevRightSpace = (prevRange && typeof prevRange.to === 'number')
+    ? Math.max(1.8, Math.min(12, prevRange.to - (prevLen - 1)))
+    : (isWideFpNow ? 2.5 : 6);
+  const isWatchingLiveEdge = !prevRange || (prevRange.to >= prevLen - 10);
+
   const lastIdx = window.currentCandles.length - 1;
   const lastCandle = window.currentCandles[lastIdx];
 
-  const candObj = { time: startSec, open: o, high: h, low: l, close: c, volume: v };
+  const candObj = { time: startSec, open: o, high: h, low: l, close: c, volume: v, _symbol: window.currentSymbol };
 
   if (lastCandle && startSec === lastCandle.time) {
     window.currentCandles[lastIdx] = candObj;
@@ -4533,6 +4589,15 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
   window._isUpdatingRealtimeTick = false;
   isSyncingRange = false;
   if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = false;
+
+  if (isWatchingLiveEdge && typeof window.syncAllChartsLogicalRange === 'function') {
+    const totalBarsNow = window.currentCandles.length;
+    const lockedTo = (totalBarsNow - 1) + prevRightSpace;
+    const lockedFrom = lockedTo - prevSpan;
+    window.syncAllChartsLogicalRange({ from: lockedFrom, to: lockedTo }, true);
+  } else if (prevRange && typeof window.syncAllChartsLogicalRange === 'function') {
+    window.syncAllChartsLogicalRange(prevRange, true);
+  }
 
   if (volumeHistogramSeries) {
     try {
