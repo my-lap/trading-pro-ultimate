@@ -487,7 +487,7 @@ const OrderFlowEngine = {
 
         // Magnet label docked cleanly on the left/right without touching Footprint numbers
         const lbl = `🧲 Pool Liq. ${pool.lev} ($${pool.usdM.toFixed(1)}M)`;
-        ctx.font = 'bold 7.2px "JetBrains Mono", monospace';
+        ctx.font = 'bold 8.6px "JetBrains Mono", monospace';
         const tw = ctx.measureText(lbl).width + 8;
         ctx.fillStyle = 'rgba(7, 10, 18, 0.90)';
         ctx.strokeStyle = pool.isYellow ? '#facc15' : '#2dd4bf';
@@ -685,13 +685,13 @@ const OrderFlowEngine = {
           ctx.textBaseline = 'middle';
 
           // Left Column: BID (Light Red #ff6b81, or Bright White/Neon on 3x Sell Imbalance)
-          ctx.font = cl.isSellImbalance ? '900 8px "JetBrains Mono", monospace' : '700 7.4px "JetBrains Mono", monospace';
+          ctx.font = cl.isSellImbalance ? '900 9.5px "JetBrains Mono", monospace' : '700 8.8px "JetBrains Mono", monospace';
           ctx.fillStyle = cl.isSellImbalance ? '#ffffff' : '#ff6b81';
           ctx.textAlign = 'right';
           ctx.fillText(bidStr, x - stemHalfW - 3, midY);
 
           // Right Column: ASK (Light Green #2ed573, or Bright White/Neon on 3x Buy Imbalance)
-          ctx.font = cl.isBuyImbalance ? '900 8px "JetBrains Mono", monospace' : '700 7.4px "JetBrains Mono", monospace';
+          ctx.font = cl.isBuyImbalance ? '900 9.5px "JetBrains Mono", monospace' : '700 8.8px "JetBrains Mono", monospace';
           ctx.fillStyle = cl.isBuyImbalance ? '#ffffff' : '#2ed573';
           ctx.textAlign = 'left';
           ctx.fillText(askStr, x + stemHalfW + 3, midY);
@@ -718,7 +718,7 @@ const OrderFlowEngine = {
         const badgeY = Math.max(12, yHigh - 11);
         const absTxt = `🛑 Assorbimento (${this.formatCompactContractNum(topAbsorptionCluster.bid)}x${this.formatCompactContractNum(topAbsorptionCluster.ask)})`;
         ctx.save();
-        ctx.font = 'bold 6.8px "JetBrains Mono", monospace';
+        ctx.font = 'bold 8.4px "JetBrains Mono", monospace';
         const bw = ctx.measureText(absTxt).width + 6;
         const bx = Math.max(6, Math.min(maxDrawRightX - bw - 4, x - bw / 2));
         ctx.fillStyle = 'rgba(48, 10, 20, 0.92)';
@@ -911,7 +911,7 @@ const OrderFlowEngine = {
         ctx.setLineDash([]);
 
         const obLabel = `${isBuyOB ? '🟢 Demand OB' : '🔴 Supply OB'} (${ob.levelsCount}x Imb) ${curr}${ob.lowPrice.toFixed(prec)}-${ob.highPrice.toFixed(prec)}`;
-        ctx.font = 'bold 7.2px "JetBrains Mono", monospace';
+        ctx.font = 'bold 8.6px "JetBrains Mono", monospace';
         const tw = ctx.measureText(obLabel).width + 8;
         const lx = Math.max(8, maxDrawRightX - tw - 6);
         ctx.fillStyle = isBuyOB ? 'rgba(6, 42, 32, 0.90)' : 'rgba(54, 12, 22, 0.90)';
@@ -962,7 +962,7 @@ const OrderFlowEngine = {
         ctx.setLineDash([]);
 
         const uLbl = `🎯 Asta Incompleta @ ${curr}${ua.price.toFixed(prec)} (${this.formatCompactContractNum(ua.bid)}x${this.formatCompactContractNum(ua.ask)})`;
-        ctx.font = 'bold 7px "JetBrains Mono", monospace';
+        ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
         const tw = ctx.measureText(uLbl).width + 8;
         const lx = Math.max(8, maxDrawRightX - tw - 6);
         ctx.fillStyle = 'rgba(8, 28, 48, 0.92)';
@@ -980,7 +980,7 @@ const OrderFlowEngine = {
       icebergAbsorptions.slice(-2).forEach(ice => {
         ctx.save();
         const iLbl = `🧊 ICEBERG @ ${curr}${ice.price.toFixed(prec)}`;
-        ctx.font = 'bold 7px "JetBrains Mono", monospace';
+        ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
         const tw = ctx.measureText(iLbl).width + 8;
         const bx = Math.max(6, Math.min(maxDrawRightX - tw - 4, ice.x - tw / 2));
         const by = Math.max(12, Math.min(chartBottomY - 14, ice.y));
@@ -1001,7 +1001,7 @@ const OrderFlowEngine = {
         const tLbl = isShortTrig
           ? `🪤 TRAPPED LONGS @ ${curr}${trap.exactLevelPrice.toFixed(prec)} ➔ SHORT`
           : `🪤 TRAPPED SHORTS @ ${curr}${trap.exactLevelPrice.toFixed(prec)} ➔ LONG`;
-        ctx.font = 'bold 7px "JetBrains Mono", monospace';
+        ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
         const tw = ctx.measureText(tLbl).width + 8;
         const bx = Math.max(6, Math.min(maxDrawRightX - tw - 4, trap.x - tw / 2));
         const by = Math.max(14, Math.min(chartBottomY - 14, trap.y + 12));
@@ -1041,7 +1041,7 @@ const OrderFlowEngine = {
       const row2Y = stripTopY + 32; // OPEN INTEREST (OI) + REGIME
       const row3Y = stripTopY + 51; // 💥 FORCED LIQUIDATIONS & CVD CURVE
 
-      ctx.font = 'bold 7.2px "JetBrains Mono", monospace';
+      ctx.font = 'bold 8.6px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#38bdf8';
@@ -1061,7 +1061,7 @@ const OrderFlowEngine = {
 
       deltaPoints.forEach(pt => {
         if (!pt.canDrawTextHere || pt.x < 78) return;
-        ctx.font = 'bold 7px "JetBrains Mono", monospace';
+        ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
@@ -1155,7 +1155,7 @@ const OrderFlowEngine = {
       layout: {
         background: { color: '#070a12' },
         textColor: '#94a3b8',
-        fontSize: 11,
+        fontSize: 12,
         fontFamily: "'JetBrains Mono', 'Inter', monospace"
       },
       localization: {

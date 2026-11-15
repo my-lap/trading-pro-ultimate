@@ -307,7 +307,7 @@ function initMainChart() {
     layout: {
       background: { color: '#090d16' },
       textColor: '#94a3b8',
-      fontSize: 11,
+      fontSize: 12,
       fontFamily: "'JetBrains Mono', 'Inter', monospace",
     },
     localization: {
