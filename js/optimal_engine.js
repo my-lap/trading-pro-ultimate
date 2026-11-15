@@ -430,10 +430,20 @@ window.OptimalEngine = {
     const numBins = vp.bins.length;
     const maxBinVol = vp.maxBinVol || 1;
 
-    const userWidth = this.volumeProfileWidth || 150;
-    const maxProfileWidth = Math.max(70, Math.min(cssW * 0.22, userWidth));
+    const isMobileScreen = (window.innerWidth <= 768 || cssW < 580);
+    const userWidth = this.volumeProfileWidth || 120;
+    const maxProfileWidth = isMobileScreen
+      ? Math.max(46, Math.min(cssW * 0.16, 68))
+      : Math.max(60, Math.min(cssW * 0.18, userWidth));
     const isRight = (this.volumeProfileStyle === 'right' || !this.volumeProfileStyle);
     const isLeft = (this.volumeProfileStyle === 'left');
+    const compactPriceStr = (p) => {
+      const n = Number(p);
+      if (!isFinite(n)) return '';
+      if (n >= 1000) return Math.round(n).toString();
+      if (n >= 10) return n.toFixed(Math.min(2, prec)).replace(/\.00$/, '');
+      return n.toFixed(prec);
+    };
 
     // Exact Y coordinate locked 1:1 to LightweightCharts price scale
     const getPriceY = (price) => {
@@ -504,23 +514,22 @@ window.OptimalEngine = {
         ctx.fillRect(barX + sellW, yMid - barH / 2, buyW, barH);
       }
 
-      // Written Order Count + Volume in K on the right edge (Hyperliquid VRVP style: e.g. "42 ord • 847K")
-      if (Math.abs(yMid - lastTextY) >= 11.5 && yMid > 12 && yMid < cssH - 12) {
+      // Ultra-compact Order Count + Volume in K on the right edge (e.g. "42o•847K")
+      if (Math.abs(yMid - lastTextY) >= 12 && yMid > 12 && yMid < cssH - 12) {
         lastTextY = yMid;
         const volKTxt = this.formatVolK(b.vol, b.price);
-        const ordTxt = `${b.ordersCount} ord • ${volKTxt}`;
-        ctx.font = isPoc ? 'bold 9.5px "JetBrains Mono", monospace' : 'bold 8.5px "JetBrains Mono", monospace';
-        const txtX = isRight ? (cssW - 5) : (barX + totalW + 4);
+        const ordTxt = `${b.ordersCount}o•${volKTxt}`;
+        ctx.font = isMobileScreen ? 'bold 6.4px "JetBrains Mono", monospace' : 'bold 7.4px "JetBrains Mono", monospace';
+        const txtX = isRight ? (cssW - 3) : (barX + totalW + 3);
         ctx.textAlign = isRight ? 'right' : 'left';
         ctx.textBaseline = 'middle';
 
-        // Subtle text shadow for crisp legibility over bars
-        ctx.fillStyle = 'rgba(9, 13, 22, 0.82)';
+        ctx.fillStyle = 'rgba(9, 13, 22, 0.78)';
         const tw = ctx.measureText(ordTxt).width;
         if (isRight) {
-          ctx.fillRect(txtX - tw - 4, yMid - 5.5, tw + 6, 11);
+          ctx.fillRect(txtX - tw - 2, yMid - 4.5, tw + 4, 9);
         } else {
-          ctx.fillRect(txtX - 2, yMid - 5.5, tw + 6, 11);
+          ctx.fillRect(txtX - 1, yMid - 4.5, tw + 4, 9);
         }
 
         ctx.fillStyle = isPoc ? '#fcd535' : (inVa ? '#f8fafc' : '#cbd5e1');
@@ -528,44 +537,36 @@ window.OptimalEngine = {
       }
     });
 
-    // 3. VISIBLE CHART MINIMUM & MAXIMUM PRICE CALLOUTS (Compact & mobile-safe)
-    const isMobileView = cssW < 520;
+    // 3. VISIBLE CHART MINIMUM & MAXIMUM PRICE MICRO-TAGS (Ultra-short: ▲65120 / ▼63269)
     const drawExtremeCallout = (candle, price, isMax) => {
       if (!candle || !isFinite(price)) return;
       const y = getPriceY(price);
       if (y < 10 || y > cssH - 10) return;
       let x = getTimeX(candle.time);
-      if (x === null || x < 16 || x > cssW - maxProfileWidth - 16) {
-        x = Math.round(cssW * 0.38);
+      if (x === null || x < 14 || x > cssW - maxProfileWidth - 14) {
+        x = Math.round(cssW * 0.35);
       }
 
-      const labelTxt = `${isMax ? '▲MAX' : '▼MIN'} ${curr}${Number(price).toFixed(prec)}`;
+      const labelTxt = `${isMax ? '▲' : '▼'}${compactPriceStr(price)}`;
       ctx.save();
-      ctx.font = isMobileView ? 'bold 7.5px "JetBrains Mono", monospace' : 'bold 8.5px "JetBrains Mono", monospace';
+      ctx.font = isMobileScreen ? 'bold 6.5px "JetBrains Mono", monospace' : 'bold 7.2px "JetBrains Mono", monospace';
       const tw = ctx.measureText(labelTxt).width;
-      const placeLeft = x > (tw + 28);
-      const lineEndX = placeLeft ? (x - 10) : (x + 10);
-      const boxW = tw + 8;
-      const boxH = isMobileView ? 12 : 14;
+      const placeLeft = x > (tw + 18);
+      const lineEndX = placeLeft ? (x - 5) : (x + 5);
+      const boxW = tw + 5;
+      const boxH = isMobileScreen ? 9.5 : 11;
       const boxX = placeLeft ? (lineEndX - boxW) : lineEndX;
       const color = isMax ? '#00f2a1' : '#f8fafc';
       const borderCol = isMax ? '#00f2a1' : '#f43f5e';
 
       ctx.beginPath();
-      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.arc(x, y, 2, 0, Math.PI * 2);
       ctx.fillStyle = borderCol;
       ctx.fill();
 
+      ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
       ctx.strokeStyle = borderCol;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(lineEndX, y);
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(9, 13, 22, 0.90)';
-      ctx.strokeStyle = borderCol;
-      ctx.lineWidth = 0.9;
+      ctx.lineWidth = 0.8;
       ctx.fillRect(boxX, y - boxH / 2, boxW, boxH);
       ctx.strokeRect(boxX, y - boxH / 2, boxW, boxH);
 
@@ -579,72 +580,47 @@ window.OptimalEngine = {
     drawExtremeCallout(vp.maxCandle, vp.maxPrice, true);
     drawExtremeCallout(vp.minCandle, vp.minPrice, false);
 
-    // 4. ULTRA-COMPACT ORDER PILLS (⚡IN, TP, TP1, SL, LIQ) + LIVE 1-SECOND ORDER BLOCK BADGE ON ACTIVE PRICE
+    // 4. MICRO ORDER TAGS DOCKED FLUSH RIGHT (IN•L, TP, TP1, SL, LIQ — zero overlap with candles on iPhone/PC)
     const ord = this.getActiveChartOrdersForSymbol(vp.symbol, liveP, prec);
     if (ord) {
-      const rightLimitX = cssW - maxProfileWidth - 4;
+      // Dock pills right at the edge of the VRVP column instead of pushing them into the candles
+      const rightEdgeX = cssW - (isMobileScreen ? 3 : Math.min(48, maxProfileWidth * 0.55));
       const usedPillYs = [];
 
-      const drawOrderLine = (price, shortTag, strokeCol, bgFill, isDashed = true, showTpSlMicro = false) => {
+      const drawOrderLine = (price, microTag, strokeCol, bgFill, isDashed = true) => {
         if (!price || !isFinite(price) || price <= 0) return;
         const y = getPriceY(price);
-        if (y < 10 || y > cssH - 10) return;
+        if (y < 9 || y > cssH - 9) return;
 
         ctx.save();
         ctx.strokeStyle = strokeCol;
-        ctx.lineWidth = showTpSlMicro ? 1.15 : 0.95;
-        if (isDashed) ctx.setLineDash([4, 4]);
+        ctx.lineWidth = isDashed ? 0.85 : 1.05;
+        if (isDashed) ctx.setLineDash([3, 3]);
         ctx.beginPath();
         ctx.moveTo(0, y);
-        ctx.lineTo(rightLimitX, y);
+        ctx.lineTo(rightEdgeX, y);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Ultra-compact font & height so it NEVER covers candles on iPhone or PC!
-        ctx.font = isMobileView ? 'bold 7px "JetBrains Mono", monospace' : 'bold 7.8px "JetBrains Mono", monospace';
-        const fullText = `${shortTag} ${curr}${Number(price).toFixed(prec)}`;
+        // On iPhone: only the 2-4 char tag (e.g. "IN•L", "TP", "SL", "LIQ"); on PC: compact tag + short price ("IN 64000")
+        ctx.font = isMobileScreen ? 'bold 6.3px "JetBrains Mono", monospace' : 'bold 7px "JetBrains Mono", monospace';
+        const fullText = isMobileScreen ? microTag : `${microTag} ${compactPriceStr(price)}`;
         const tw = ctx.measureText(fullText).width;
-        const pillH = isMobileView ? 11 : 12.5;
-        const pillW = tw + 7;
+        const pillH = isMobileScreen ? 9.5 : 11;
+        const pillW = tw + 5;
 
-        // Avoid vertical collision between pills by shifting X slightly left if two levels are very close in Y
         let xShift = 0;
         for (let k = 0; k < usedPillYs.length; k++) {
-          if (Math.abs(usedPillYs[k].y - y) < (pillH + 2)) {
-            xShift = Math.max(xShift, usedPillYs[k].w + 4);
+          if (Math.abs(usedPillYs[k].y - y) < (pillH + 1.5)) {
+            xShift = Math.max(xShift, usedPillYs[k].w + 2);
           }
         }
-        const pillX = Math.max(6, rightLimitX - pillW - 3 - xShift);
-        let totalUsedW = pillW + xShift;
-
-        if (showTpSlMicro && !isMobileView) {
-          const microW = 15;
-          const tpX = Math.max(4, pillX - (microW * 2) - 4);
-          const slX = tpX + microW + 2;
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.22)';
-          ctx.strokeStyle = '#10b981';
-          ctx.lineWidth = 0.8;
-          ctx.fillRect(tpX, y - pillH / 2, microW, pillH);
-          ctx.strokeRect(tpX, y - pillH / 2, microW, pillH);
-          ctx.fillStyle = '#00f2a1';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('TP', tpX + microW / 2, y);
-
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
-          ctx.strokeStyle = '#f59e0b';
-          ctx.fillRect(slX, y - pillH / 2, microW, pillH);
-          ctx.strokeRect(slX, y - pillH / 2, microW, pillH);
-          ctx.fillStyle = '#fbbf24';
-          ctx.fillText('SL', slX + microW / 2, y);
-          totalUsedW += (microW * 2) + 6;
-        }
-
-        usedPillYs.push({ y, w: totalUsedW });
+        const pillX = Math.max(4, rightEdgeX - pillW - xShift);
+        usedPillYs.push({ y, w: pillW + xShift });
 
         ctx.fillStyle = bgFill;
         ctx.strokeStyle = strokeCol;
-        ctx.lineWidth = 0.9;
+        ctx.lineWidth = 0.8;
         ctx.fillRect(pillX, y - pillH / 2, pillW, pillH);
         ctx.strokeRect(pillX, y - pillH / 2, pillW, pillH);
 
@@ -656,54 +632,54 @@ window.OptimalEngine = {
       };
 
       const sideChar = ord.side === 'SHORT' ? 'S' : 'L';
-      drawOrderLine(ord.tpPrice, `🎯TP`, '#00f2a1', 'rgba(6, 46, 34, 0.90)', true, false);
+      drawOrderLine(ord.tpPrice, 'TP', '#00f2a1', 'rgba(6, 46, 34, 0.90)', true);
       if (ord.tp1Price && Math.abs(ord.tp1Price - ord.tpPrice) > (vp.maxPrice - vp.minPrice) * 0.04) {
-        drawOrderLine(ord.tp1Price, 'TP1', '#34d399', 'rgba(6, 40, 32, 0.86)', true, false);
+        drawOrderLine(ord.tp1Price, 'TP1', '#34d399', 'rgba(6, 40, 32, 0.86)', true);
       }
-      drawOrderLine(ord.entryPrice, `⚡IN(${sideChar})`, '#38bdf8', 'rgba(11, 25, 44, 0.92)', false, true);
-      drawOrderLine(ord.slPrice, '🛡️SL', '#f43f5e', 'rgba(48, 14, 24, 0.90)', true, false);
-      drawOrderLine(ord.liqPrice, `💀LIQ ${ord.leverage}x`, '#c084fc', 'rgba(38, 14, 54, 0.90)', true, false);
+      drawOrderLine(ord.entryPrice, `IN•${sideChar}`, '#38bdf8', 'rgba(11, 25, 44, 0.92)', false);
+      drawOrderLine(ord.slPrice, 'SL', '#f43f5e', 'rgba(48, 14, 24, 0.90)', true);
+      drawOrderLine(ord.liqPrice, 'LIQ', '#c084fc', 'rgba(38, 14, 54, 0.90)', true);
     }
 
-    // 5. SIMULTANEOUS 1-SECOND REAL-TIME ORDER BLOCK COUNTER & VOLUME AT CURRENT LIVE PRICE
+    // 5. LIVE 1-SECOND ORDER BLOCK COUNTER: update top badge + ultra-short flush-right micro-tag (never over candles!)
     if (liveP > 0 && vp.bins && vp.bins.length) {
-      const yLive = getPriceY(liveP);
-      if (yLive >= 12 && yLive <= cssH - 12) {
-        // Find the bin corresponding to current live price at this exact second
-        let activeBin = vp.bins[0];
-        let minDiff = Infinity;
-        vp.bins.forEach(b => {
-          const d = Math.abs(b.price - liveP);
-          if (d < minDiff) {
-            minDiff = d;
-            activeBin = b;
-          }
-        });
-        if (activeBin) {
-          const buyOrd1s = Math.max(1, Math.round(activeBin.ordersCount * (activeBin.buyVol / Math.max(1e-9, activeBin.vol))));
-          const sellOrd1s = Math.max(1, activeBin.ordersCount - buyOrd1s);
-          const buyVolK = this.formatVolK(activeBin.buyVol, liveP);
-          const sellVolK = this.formatVolK(activeBin.sellVol, liveP);
-          const secNow = new Date().toLocaleTimeString('it-IT');
-          const liveBlockTxt = `1s [${secNow}] 🟢B:${buyOrd1s}ord(${buyVolK}) 🔴S:${sellOrd1s}ord(${sellVolK})`;
-
+      let activeBin = vp.bins[0];
+      let minDiff = Infinity;
+      vp.bins.forEach(b => {
+        const d = Math.abs(b.price - liveP);
+        if (d < minDiff) {
+          minDiff = d;
+          activeBin = b;
+        }
+      });
+      if (activeBin) {
+        const buyOrd1s = Math.max(1, Math.round(activeBin.ordersCount * (activeBin.buyVol / Math.max(1e-9, activeBin.vol))));
+        const sellOrd1s = Math.max(1, activeBin.ordersCount - buyOrd1s);
+        const buyVolK = this.formatVolK(activeBin.buyVol, liveP);
+        const sellVolK = this.formatVolK(activeBin.sellVol, liveP);
+        if (badge) {
+          badge.innerHTML = isMobileScreen
+            ? `<span style="color:#00f2a1;font-weight:800;">●1s</span> <span style="color:var(--accent)">POC ${compactPriceStr(vp.poc)}</span> <span style="color:#00f2a1">B:${buyOrd1s}o(${buyVolK})</span> <span style="color:#f43f5e">S:${sellOrd1s}o(${sellVolK})</span>`
+            : `<span style="color:#00f2a1;font-weight:800;">●VRVP 1s</span> <span style="color:var(--accent);font-weight:800">POC ${curr}${compactPriceStr(vp.poc)}</span> <span style="color:var(--cyan)">VAH ${curr}${compactPriceStr(vp.vah)}</span> <span style="color:var(--purple)">VAL ${curr}${compactPriceStr(vp.val)}</span> <span style="color:#00f2a1;font-weight:800;">🟢B:${buyOrd1s}o(${buyVolK})</span> <span style="color:#f43f5e;font-weight:800;">🔴S:${sellOrd1s}o(${sellVolK})</span> <span style="color:#fcd535;">Tot:${totalOrdStr}o•${totalVolK}</span>`;
+        }
+        const yLive = getPriceY(liveP);
+        if (yLive >= 12 && yLive <= cssH - 12) {
+          const microLiveTxt = `${buyOrd1s}B/${sellOrd1s}S`;
           ctx.save();
-          ctx.font = isMobileView ? 'bold 6.8px "JetBrains Mono", monospace' : 'bold 7.5px "JetBrains Mono", monospace';
-          const bw = ctx.measureText(liveBlockTxt).width + 8;
-          const bh = isMobileView ? 10.5 : 12;
-          const bx = Math.max(6, cssW - maxProfileWidth - bw - 6);
-          const by = Math.max(12, Math.min(cssH - 14, yLive - bh - 4));
-
-          ctx.fillStyle = 'rgba(7, 12, 22, 0.92)';
+          ctx.font = isMobileScreen ? 'bold 6px "JetBrains Mono", monospace' : 'bold 6.8px "JetBrains Mono", monospace';
+          const bw = ctx.measureText(microLiveTxt).width + 5;
+          const bh = isMobileScreen ? 9 : 10.5;
+          const bx = Math.max(4, cssW - bw - 2);
+          const by = Math.max(10, Math.min(cssH - 12, yLive - bh - 2));
+          ctx.fillStyle = 'rgba(7, 12, 22, 0.90)';
           ctx.strokeStyle = 'rgba(0, 242, 161, 0.65)';
-          ctx.lineWidth = 0.8;
+          ctx.lineWidth = 0.75;
           ctx.fillRect(bx, by, bw, bh);
           ctx.strokeRect(bx, by, bw, bh);
-
           ctx.fillStyle = '#00f2a1';
-          ctx.textAlign = 'left';
+          ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(liveBlockTxt, bx + 4, by + bh / 2);
+          ctx.fillText(microLiveTxt, bx + bw / 2, by + bh / 2);
           ctx.restore();
         }
       }

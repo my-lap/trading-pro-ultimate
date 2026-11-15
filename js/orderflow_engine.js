@@ -356,23 +356,26 @@ const OrderFlowEngine = {
           ctx.lineTo(maxDrawRightX - 60, y);
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.font = 'bold 7px "JetBrains Mono", monospace';
-          const txt = `${lbl} ${curr}${Number(p).toFixed(prec)}`;
-          const tw = ctx.measureText(txt).width + 6;
+          ctx.font = 'bold 6.5px "JetBrains Mono", monospace';
+          const isMob = (window.innerWidth <= 768 || cssW < 580);
+          const shortP = p >= 1000 ? Math.round(p) : Number(p).toFixed(prec);
+          const txt = isMob ? lbl : `${lbl} ${shortP}`;
+          const tw = ctx.measureText(txt).width + 5;
+          const rx = maxDrawRightX - 2 - tw;
           ctx.fillStyle = 'rgba(9,13,22,0.9)';
           ctx.strokeStyle = col;
-          ctx.fillRect(maxDrawRightX - 60 - tw, y - 5.5, tw, 11);
-          ctx.strokeRect(maxDrawRightX - 60 - tw, y - 5.5, tw, 11);
+          ctx.fillRect(rx, y - 5, tw, 10);
+          ctx.strokeRect(rx, y - 5, tw, 10);
           ctx.fillStyle = col;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(txt, maxDrawRightX - 60 - tw / 2, y);
+          ctx.fillText(txt, rx + tw / 2, y);
           ctx.restore();
         };
-        drawTwinLevel(ord.tpPrice, '🎯TP', '#00f2a1');
-        drawTwinLevel(ord.entryPrice, '⚡IN', '#38bdf8');
-        drawTwinLevel(ord.slPrice, '🛡️SL', '#f43f5e');
-        drawTwinLevel(ord.liqPrice, `💀LIQ`, '#c084fc');
+        drawTwinLevel(ord.tpPrice, 'TP', '#00f2a1');
+        drawTwinLevel(ord.entryPrice, 'IN', '#38bdf8');
+        drawTwinLevel(ord.slPrice, 'SL', '#f43f5e');
+        drawTwinLevel(ord.liqPrice, 'LIQ', '#c084fc');
       }
     }
 
