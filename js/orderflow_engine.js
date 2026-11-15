@@ -411,7 +411,8 @@ const OrderFlowEngine = {
       },
       localization: {
         locale: 'it-IT',
-        dateFormat: 'dd/MM/yyyy'
+        dateFormat: 'dd/MM/yyyy',
+        timeFormatter: (timestamp) => (typeof formatRomeTime === 'function' ? formatRomeTime(timestamp, true) : new Date(timestamp * 1000).toLocaleTimeString('it-IT'))
       },
       grid: {
         vertLines: { visible: true, color: 'rgba(255, 255, 255, 0.08)', style: 2 },
@@ -432,8 +433,9 @@ const OrderFlowEngine = {
         borderColor: '#1e293b',
         timeVisible: true,
         secondsVisible: true,
-        rightOffset: 12,
-        barSpacing: 14
+        rightOffset: 8,
+        barSpacing: 8,
+        tickMarkFormatter: (time, tickMarkType, locale) => (typeof formatTimeScaleTick === 'function' ? formatTimeScaleTick(time, tickMarkType, locale) : '')
       }
     });
 
@@ -449,11 +451,19 @@ const OrderFlowEngine = {
       priceLineVisible: true
     });
 
-    // Bidirectional 0ms Logical Range Sync between Main Chart and Twin Footprint Chart
+    // Bidirectional 0ms Logical Range Sync between Main Chart and Twin Footprint Chart (with anti-drift guard)
+    const releaseTwinSync = () => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => { this._isSyncingTwinRange = false; });
+      } else {
+        setTimeout(() => { this._isSyncingTwinRange = false; }, 20);
+      }
+    };
+
     const mainChart = window.mainChart || window.mainChartInstance;
     if (mainChart && typeof mainChart.timeScale === 'function') {
       mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        if (this._isSyncingTwinRange || !range || !this.twinChart) return;
+        if (this._isSyncingTwinRange || window._isUpdatingRealtimeTick || !range || !this.twinChart) return;
         this._isSyncingTwinRange = true;
         try {
           this.twinChart.timeScale().setVisibleLogicalRange(range);
@@ -462,12 +472,12 @@ const OrderFlowEngine = {
             this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
           }
         } catch (e) {}
-        this._isSyncingTwinRange = false;
+        releaseTwinSync();
       });
     }
 
     this.twinChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (this._isSyncingTwinRange || !range) return;
+      if (this._isSyncingTwinRange || window._isUpdatingRealtimeTick || !range) return;
       this._isSyncingTwinRange = true;
       try {
         const mc = window.mainChart || window.mainChartInstance;
@@ -479,7 +489,7 @@ const OrderFlowEngine = {
           this.drawFootprintBlocksOnCanvas(twinCanvas, this.twinChart, this.twinCandleSeries, true);
         }
       } catch (e) {}
-      this._isSyncingTwinRange = false;
+      releaseTwinSync();
     });
   },
 

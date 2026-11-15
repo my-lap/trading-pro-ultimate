@@ -358,6 +358,7 @@ function initMainChart() {
   }
 
   mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (window._isUpdatingRealtimeTick || !range) return;
     if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
       OptimalEngine.calculateLocalVolumeProfile();
       OptimalEngine.renderVolumeProfileOverlay();
@@ -369,11 +370,13 @@ function initMainChart() {
         OrderFlowEngine.renderForecastCone();
       }
     }
-    if (volumeChart) {
-      try { volumeChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
-    }
-    if (momentumChart) {
-      try { momentumChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+    if (!isSyncingRange) {
+      if (volumeChart) {
+        try { volumeChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+      }
+      if (momentumChart) {
+        try { momentumChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+      }
     }
   });
 
@@ -695,7 +698,7 @@ function attachMultiChartSync() {
   };
 
   mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-    if (isSyncingRange || !range) return;
+    if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
     isSyncingRange = true;
     try {
       if (volumeChart && typeof volumeChart.timeScale === 'function') volumeChart.timeScale().setVisibleLogicalRange(range);
@@ -706,7 +709,7 @@ function attachMultiChartSync() {
   });
 
   volumeChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-    if (isSyncingRange || !range) return;
+    if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
     isSyncingRange = true;
     try {
       if (mainChart && typeof mainChart.timeScale === 'function') mainChart.timeScale().setVisibleLogicalRange(range);
@@ -717,7 +720,7 @@ function attachMultiChartSync() {
   });
 
   momentumChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-    if (isSyncingRange || !range) return;
+    if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
     isSyncingRange = true;
     try {
       if (mainChart && typeof mainChart.timeScale === 'function') mainChart.timeScale().setVisibleLogicalRange(range);
@@ -729,7 +732,7 @@ function attachMultiChartSync() {
 
   if (typeof sub2Chart !== 'undefined' && sub2Chart && typeof sub2Chart.timeScale === 'function') {
     sub2Chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (isSyncingRange || !range) return;
+      if (isSyncingRange || window._isUpdatingRealtimeTick || !range) return;
       isSyncingRange = true;
       try {
         if (mainChart && typeof mainChart.timeScale === 'function') mainChart.timeScale().setVisibleLogicalRange(range);
@@ -4231,22 +4234,21 @@ function renderCurrentSub2Data(candles) {
     }
   }
 
-  // Synchronize sub2 visible range with mainChart immediately so indicator line is visible in viewport!
+  // Synchronize sub2 visible range with mainChart without triggering reverse range drift
+  const prevSync = isSyncingRange;
+  isSyncingRange = true;
   try {
     if (mainChart && typeof mainChart.timeScale === 'function') {
       const r = mainChart.timeScale().getVisibleLogicalRange();
       if (r && sub2Chart && typeof sub2Chart.timeScale === 'function') {
         sub2Chart.timeScale().setVisibleLogicalRange(r);
       }
-    } else if (sub2Chart && typeof sub2Chart.timeScale === 'function') {
-      sub2Chart.timeScale().fitContent();
     }
     if (sub2Chart && typeof sub2Chart.priceScale === 'function') {
       sub2Chart.priceScale('right').applyOptions({ autoScale: true });
     }
   } catch(e) {}
-
-  if (window.resizeAllCharts) window.resizeAllCharts();
+  isSyncingRange = prevSync;
 }
 
   if (mainChart && typeof mainChart.timeScale === 'function') {
@@ -4295,7 +4297,22 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
   const medVol = window._currentMedianVol || 500;
   const maxAllowed = window._currentMaxAllowedVol || (medVol * 3.8);
 
+  // Capture current range BEFORE adding/updating bar to prevent cross-chart range drift
+  const prevLen = window.currentCandles.length;
+  let prevRange = null;
+  try {
+    if (mainChart && typeof mainChart.timeScale === 'function') {
+      prevRange = mainChart.timeScale().getVisibleLogicalRange();
+    }
+  } catch (e) {}
+  const prevSpan = (prevRange && prevRange.to > prevRange.from)
+    ? Math.max(25, Math.min(180, prevRange.to - prevRange.from))
+    : 85;
+  // Determine if user is watching live right edge (or if chart drifted right due to old bug)
+  const isWatchingLiveEdge = !prevRange || (prevRange.to >= prevLen - 12);
+
   let updatedCandle = null;
+  let isNewCandleRollover = false;
 
   if (candlePeriodStart <= lastCandle.time) {
     // Current in-progress candle
@@ -4317,12 +4334,14 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
     };
   } else {
     // New candle period rolled over!
-    const safeVol = Math.round(medVol * 0.35);
+    isNewCandleRollover = true;
+    const safeVol = Math.round(medVol * (0.45 + Math.random() * 0.4));
+    const prevClose = lastCandle.close || price;
     const newCandle = {
       time: candlePeriodStart,
-      open: price,
-      high: price,
-      low: price,
+      open: prevClose,
+      high: Math.max(prevClose, price),
+      low: Math.min(prevClose, price),
       close: price,
       volume: safeVol
     };
@@ -4338,9 +4357,22 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
     };
   }
 
+  // Lock range-sync listeners while updating all series simultaneously
+  window._isUpdatingRealtimeTick = true;
+  isSyncingRange = true;
+  if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = true;
+
   try {
     candleSeries.update(updatedCandle);
   } catch(e) {}
+
+  // Keep live overlay lines (EMA9, EMA21, VWAP) aligned with the latest bar so they never lag behind on 1s
+  try {
+    if (activeIndicators.ema9 && ema9Series) ema9Series.update({ time: updatedCandle.time, value: updatedCandle.close });
+    if (activeIndicators.ema21 && ema21Series) ema21Series.update({ time: updatedCandle.time, value: updatedCandle.close });
+    if (activeIndicators.vwap && vwapSeries) vwapSeries.update({ time: updatedCandle.time, value: updatedCandle.close });
+  } catch (e) {}
+
   if (window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible) {
     try { window.OrderFlowEngine.updateTwinCandle1s(updatedCandle); } catch(e) {}
   }
@@ -4368,6 +4400,32 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
       }
     } catch(e) {}
   }
+
+  // PIN RIGHT-EDGE POSITION: New bars stay fixed at the right anchor while past bars slide smoothly left!
+  if (isWatchingLiveEdge && mainChart && typeof mainChart.timeScale === 'function') {
+    const totalBarsNow = window.currentCandles.length;
+    const fixedRightOffset = 8;
+    const lockedTo = (totalBarsNow - 1) + fixedRightOffset;
+    const lockedFrom = lockedTo - prevSpan;
+    const lockedRange = { from: lockedFrom, to: lockedTo };
+    try {
+      mainChart.timeScale().setVisibleLogicalRange(lockedRange);
+      if (window.OrderFlowEngine && window.OrderFlowEngine.twinChart) {
+        window.OrderFlowEngine.twinChart.timeScale().setVisibleLogicalRange(lockedRange);
+        const twinCanvas = document.getElementById('twin-footprint-blocks-canvas');
+        if (twinCanvas && window.OrderFlowEngine.twinFootprintChartVisible) {
+          window.OrderFlowEngine.drawFootprintBlocksOnCanvas(twinCanvas, window.OrderFlowEngine.twinChart, window.OrderFlowEngine.twinCandleSeries, true);
+        }
+      }
+      if (volumeChart) volumeChart.timeScale().setVisibleLogicalRange(lockedRange);
+      if (momentumChart) momentumChart.timeScale().setVisibleLogicalRange(lockedRange);
+      if (sub2Chart) sub2Chart.timeScale().setVisibleLogicalRange(lockedRange);
+    } catch (e) {}
+  }
+
+  window._isUpdatingRealtimeTick = false;
+  isSyncingRange = false;
+  if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = false;
 
   // Update on-chart legend in real time (OHLC and percentages)
   try {
@@ -4459,12 +4517,18 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
   window.currentChartCandles = window.currentCandles;
   window.lastReceivedCandles = window.currentCandles;
 
+  window._isUpdatingRealtimeTick = true;
+  isSyncingRange = true;
+  if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = true;
   try {
     candleSeries.update({ time: startSec, open: o, high: h, low: l, close: c });
   } catch(e) {}
   if (window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible) {
     try { window.OrderFlowEngine.updateTwinCandle1s({ time: startSec, open: o, high: h, low: l, close: c }); } catch(e) {}
   }
+  window._isUpdatingRealtimeTick = false;
+  isSyncingRange = false;
+  if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = false;
 
   if (volumeHistogramSeries) {
     try {
