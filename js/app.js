@@ -264,7 +264,7 @@ function closeTopChapterDrawer() {
 
   setTimeout(() => {
     if (window.resizeAllCharts) window.resizeAllCharts();
-    if (window.applyTimeframeScaleOptions) window.applyTimeframeScaleOptions(window.currentInterval);
+    if (window.mainChart && window.mainChart.timeScale) window.mainChart.timeScale().fitContent();
     if (window.OrderFlowEngine) {
       OrderFlowEngine.renderFootprintOverlay();
       OrderFlowEngine.renderDenseTimeGrid();

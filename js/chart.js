@@ -163,17 +163,52 @@ function applyTimeframeScaleOptions(tf) {
   const isMonthly = (tfRaw === '1M' || tfLower === '1mese' || tfLower === '1month');
   const isHighTf = isDaily || isWeekly || isMonthly;
 
-  if (typeof window.chartVisibleBars !== 'number' || !isFinite(window.chartVisibleBars)) {
-    window.chartVisibleBars = 45;
-  }
-  if (typeof window.chartVertZoomMult !== 'number' || !isFinite(window.chartVertZoomMult)) {
-    window.chartVertZoomMult = 1.0;
-  }
-
-  // High-Density Time Scale & Persistent User Zoom Scope
+  // High-Density Time Scale & Maximum Time Domain Scope per Timeframe
   let optimalBarSpacing = 8;
-  let minBarSpacing = 0.5;
-  let visibleBars = Math.max(10, Math.min(180, Math.round(window.chartVisibleBars)));
+  let minBarSpacing = 3;
+  let visibleBars = 95;
+
+  if (isSeconds) {
+    optimalBarSpacing = 8;
+    minBarSpacing = 3;
+    visibleBars = 95;
+  } else if (is1Min) {
+    optimalBarSpacing = 8;
+    minBarSpacing = 3;
+    visibleBars = 100;
+  } else if (is5Min) {
+    optimalBarSpacing = 8;
+    minBarSpacing = 3;
+    visibleBars = 95;
+  } else if (tfLower === '15m') {
+    optimalBarSpacing = 8;
+    minBarSpacing = 3;
+    visibleBars = 95;
+  } else if (tfLower === '30m') {
+    optimalBarSpacing = 8;
+    minBarSpacing = 3;
+    visibleBars = 95;
+  } else if (tfLower === '1h') {
+    optimalBarSpacing = 7;
+    minBarSpacing = 2.5;
+    visibleBars = 105;
+  } else if (tfLower === '4h') {
+    optimalBarSpacing = 7;
+    minBarSpacing = 2.5;
+    visibleBars = 105;
+  } else if (isDaily) {
+    optimalBarSpacing = 7;
+    minBarSpacing = 2;
+    visibleBars = 120;
+  } else if (isWeekly) {
+    optimalBarSpacing = 7;
+    minBarSpacing = 2;
+    visibleBars = 85;
+  } else if (isMonthly) {
+    optimalBarSpacing = 8;
+    minBarSpacing = 3;
+    visibleBars = 65;
+  }
 
   const opts = {
     borderColor: '#1e293b',
@@ -218,37 +253,6 @@ function applyTimeframeScaleOptions(tf) {
   }
 }
 window.applyTimeframeScaleOptions = applyTimeframeScaleOptions;
-
-window.adjustChartZoomBars = function(deltaBars) {
-  window.chartVisibleBars = Math.max(10, Math.min(180, Math.round((window.chartVisibleBars || 45) + deltaBars)));
-  const candles = window.currentCandles || [];
-  if (mainChart && candles.length > 0) {
-    const lr = mainChart.timeScale().getVisibleLogicalRange();
-    const to = lr && isFinite(lr.to) ? lr.to : (candles.length - 1 + 6);
-    const from = to - window.chartVisibleBars;
-    window.syncAllChartsLogicalRange({ from, to }, true);
-  }
-  if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
-    OptimalEngine.calculateLocalVolumeProfile();
-    OptimalEngine.renderVolumeProfileOverlay();
-  }
-};
-
-window.resetChartAutoFit = function() {
-  window.chartVisibleBars = 45;
-  window.chartVertZoomMult = 1.0;
-  const candles = window.currentCandles || [];
-  if (mainChart && candles.length > 0) {
-    mainChart.priceScale('right').applyOptions({ autoScale: true });
-    const to = (candles.length - 1) + 6;
-    const from = Math.max(0, candles.length - 45);
-    window.syncAllChartsLogicalRange({ from, to }, true);
-  }
-  if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
-    OptimalEngine.calculateLocalVolumeProfile();
-    OptimalEngine.renderVolumeProfileOverlay();
-  }
-};
 
 // Master 1:1 Logical Range Synchronizer across ALL 5 charts (Main, Twin Footprint, Volume, Momentum, Sub2)
 window.syncAllChartsLogicalRange = function(range, redrawOverlays = true) {
@@ -342,7 +346,6 @@ function initMainChart() {
   });
 
   // Candlestick Series: Only this series has visible price badges on the vertical axis!
-  // Auto-Scale Y strictly locked to visible OHLC candles (+15% margin * user vertical zoom)
   candleSeries = mainChart.addCandlestickSeries({
     upColor: '#00f2a1',
     downColor: '#ff4560',
@@ -350,28 +353,7 @@ function initMainChart() {
     wickUpColor: '#00f2a1',
     wickDownColor: '#ff4560',
     lastValueVisible: true,
-    priceLineVisible: true,
-    autoscaleInfoProvider: (original) => {
-      const candles = window.currentCandles || [];
-      if (candles.length && mainChart && typeof mainChart.timeScale === 'function') {
-        const lr = mainChart.timeScale().getVisibleLogicalRange();
-        const from = lr && isFinite(lr.from) ? Math.max(0, Math.floor(lr.from)) : Math.max(0, candles.length - (window.chartVisibleBars || 45));
-        const to = lr && isFinite(lr.to) ? Math.min(candles.length - 1, Math.ceil(lr.to)) : candles.length - 1;
-        let minL = Infinity;
-        let maxH = -Infinity;
-        for (let i = from; i <= to; i++) {
-          const c = candles[i];
-          if (!c) continue;
-          if (c.low < minL) minL = c.low;
-          if (c.high > maxH) maxH = c.high;
-        }
-        if (isFinite(minL) && isFinite(maxH) && maxH > minL) {
-          const pad = (maxH - minL) * (0.15 * (window.chartVertZoomMult || 1.0));
-          return { priceRange: { minValue: minL - pad, maxValue: maxH + pad } };
-        }
-      }
-      return original();
-    }
+    priceLineVisible: true
   });
   window.mainCandleSeries = candleSeries;
   window.candleSeries = candleSeries;
@@ -407,33 +389,7 @@ function initMainChart() {
         });
       }
     });
-    let pinchStartDist = 0;
-    let pinchStartBars = window.chartVisibleBars || 45;
-    chartMainContainer.addEventListener('touchstart', (e) => {
-      if (e.touches && e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        pinchStartDist = Math.hypot(dx, dy) || 1;
-        pinchStartBars = window.chartVisibleBars || 45;
-      }
-    }, { passive: true });
-
-    chartMainContainer.addEventListener('touchmove', (e) => {
-      if (e.touches && e.touches.length === 2 && pinchStartDist > 0) {
-        e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.hypot(dx, dy) || 1;
-        const ratio = pinchStartDist / dist;
-        window.chartVisibleBars = Math.max(10, Math.min(180, Math.round(pinchStartBars * ratio)));
-        const candles = window.currentCandles || [];
-        if (candles.length > 0 && mainChart) {
-          const lr = mainChart.timeScale().getVisibleLogicalRange();
-          const to = lr && isFinite(lr.to) ? lr.to : (candles.length - 1 + 6);
-          window.syncAllChartsLogicalRange({ from: to - window.chartVisibleBars, to }, true);
-        }
-        return;
-      }
+    chartMainContainer.addEventListener('touchmove', () => {
       requestAnimationFrame(() => {
         if (window.OrderFlowEngine && OrderFlowEngine.forecastConeVisible) {
           OrderFlowEngine.renderForecastCone();
@@ -442,23 +398,9 @@ function initMainChart() {
           OptimalEngine.renderVolumeProfileOverlay();
         }
       });
-    }, { passive: false });
+    }, { passive: true });
 
-    chartMainContainer.addEventListener('wheel', (e) => {
-      if (e.shiftKey) {
-        e.preventDefault();
-        const factor = e.deltaY < 0 ? 0.88 : 1.14;
-        window.chartVertZoomMult = Math.max(0.35, Math.min(3.5, (window.chartVertZoomMult || 1.0) * factor));
-        if (mainChart) mainChart.priceScale('right').applyOptions({ autoScale: true });
-        if (window.OptimalEngine) {
-          const vpFactor = e.deltaY < 0 ? 1.1 : 0.91;
-          OptimalEngine.volumeProfileWidth = Math.max(60, Math.min(240, Math.round((OptimalEngine.volumeProfileWidth || 120) * vpFactor)));
-        }
-      } else if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const step = e.deltaY < 0 ? -5 : 5;
-        window.adjustChartZoomBars(step);
-      }
+    chartMainContainer.addEventListener('wheel', () => {
       requestAnimationFrame(() => {
         if (window.OrderFlowEngine && OrderFlowEngine.forecastConeVisible) {
           OrderFlowEngine.renderForecastCone();
@@ -468,15 +410,11 @@ function initMainChart() {
           OptimalEngine.renderVolumeProfileOverlay();
         }
       });
-    }, { passive: false });
+    }, { passive: true });
   }
 
   mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
     if (window._isUpdatingRealtimeTick || !range) return;
-    if (typeof range.from === 'number' && typeof range.to === 'number') {
-      const span = Math.round(range.to - range.from);
-      if (span >= 10 && span <= 180) window.chartVisibleBars = span;
-    }
     if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
       OptimalEngine.calculateLocalVolumeProfile();
       OptimalEngine.renderVolumeProfileOverlay();
@@ -506,8 +444,7 @@ function initMainChart() {
     lineWidth: 2,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   ema9Series = mainChart.addLineSeries({
@@ -515,8 +452,7 @@ function initMainChart() {
     lineWidth: 1.5,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   ema21Series = mainChart.addLineSeries({
@@ -524,8 +460,7 @@ function initMainChart() {
     lineWidth: 1.5,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   ema50Series = mainChart.addLineSeries({
@@ -533,8 +468,7 @@ function initMainChart() {
     lineWidth: 1.5,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   ema200Series = mainChart.addLineSeries({
@@ -542,8 +476,7 @@ function initMainChart() {
     lineWidth: 2,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   // Arnaud Legoux Moving Average (ALMA)
@@ -552,8 +485,7 @@ function initMainChart() {
     lineWidth: 2,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   // SuperTrend Quant Line
@@ -562,8 +494,7 @@ function initMainChart() {
     lineWidth: 2,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   bbUpperSeries = mainChart.addLineSeries({
@@ -572,8 +503,7 @@ function initMainChart() {
     lineStyle: 2,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   bbMiddleSeries = mainChart.addLineSeries({
@@ -582,8 +512,7 @@ function initMainChart() {
     lineStyle: 0,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   bbLowerSeries = mainChart.addLineSeries({
@@ -592,8 +521,7 @@ function initMainChart() {
     lineStyle: 2,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   // Donchian Channels (20)
@@ -603,8 +531,7 @@ function initMainChart() {
     lineStyle: 1,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   donchLowerSeries = mainChart.addLineSeries({
@@ -613,8 +540,7 @@ function initMainChart() {
     lineStyle: 1,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   sarSeries = mainChart.addLineSeries({
@@ -623,8 +549,7 @@ function initMainChart() {
     lineStyle: 1,
     title: '',
     lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => null
+    priceLineVisible: false
   });
 
   // Init Sub-Panels (Volume, Momentum 1, Oscillator 2)
@@ -1210,8 +1135,7 @@ function renderChartData(candles) {
         dynamicOverlaySeries[ov.id] = mainChart.addLineSeries({
           color: ov.color,
           lineWidth: ov.width || 1.5,
-          priceLineVisible: false,
-          autoscaleInfoProvider: () => null
+          priceLineVisible: false
         });
       }
       if (dynamicOverlaySeries[ov.id]) {
@@ -1225,9 +1149,9 @@ function renderChartData(candles) {
   // Keltner Channels
   if (activeIndicators.keltner) {
     if (!dynamicOverlaySeries['keltner_u'] && mainChart) {
-      dynamicOverlaySeries['keltner_u'] = mainChart.addLineSeries({ color: 'rgba(56, 189, 248, 0.7)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, autoscaleInfoProvider: () => null });
-      dynamicOverlaySeries['keltner_m'] = mainChart.addLineSeries({ color: 'rgba(56, 189, 248, 0.9)', lineWidth: 1.5, priceLineVisible: false, autoscaleInfoProvider: () => null });
-      dynamicOverlaySeries['keltner_l'] = mainChart.addLineSeries({ color: 'rgba(56, 189, 248, 0.7)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, autoscaleInfoProvider: () => null });
+      dynamicOverlaySeries['keltner_u'] = mainChart.addLineSeries({ color: 'rgba(56, 189, 248, 0.7)', lineWidth: 1, lineStyle: 2, priceLineVisible: false });
+      dynamicOverlaySeries['keltner_m'] = mainChart.addLineSeries({ color: 'rgba(56, 189, 248, 0.9)', lineWidth: 1.5, priceLineVisible: false });
+      dynamicOverlaySeries['keltner_l'] = mainChart.addLineSeries({ color: 'rgba(56, 189, 248, 0.7)', lineWidth: 1, lineStyle: 2, priceLineVisible: false });
     }
     const kc = calcKeltnerChannels(times, candles, 20, 2, prec);
     dynamicOverlaySeries['keltner_u'].setData(kc.upper);
@@ -1242,10 +1166,10 @@ function renderChartData(candles) {
   // Ichimoku Cloud
   if (activeIndicators.ichimoku) {
     if (!dynamicOverlaySeries['ichi_tenkan'] && mainChart) {
-      dynamicOverlaySeries['ichi_tenkan'] = mainChart.addLineSeries({ color: '#ef4444', lineWidth: 1.5, priceLineVisible: false, autoscaleInfoProvider: () => null });
-      dynamicOverlaySeries['ichi_kijun'] = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceLineVisible: false, autoscaleInfoProvider: () => null });
-      dynamicOverlaySeries['ichi_spanA'] = mainChart.addLineSeries({ color: 'rgba(34, 197, 94, 0.7)', lineWidth: 1, lineStyle: 1, priceLineVisible: false, autoscaleInfoProvider: () => null });
-      dynamicOverlaySeries['ichi_spanB'] = mainChart.addLineSeries({ color: 'rgba(239, 68, 68, 0.7)', lineWidth: 1, lineStyle: 1, priceLineVisible: false, autoscaleInfoProvider: () => null });
+      dynamicOverlaySeries['ichi_tenkan'] = mainChart.addLineSeries({ color: '#ef4444', lineWidth: 1.5, priceLineVisible: false });
+      dynamicOverlaySeries['ichi_kijun'] = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceLineVisible: false });
+      dynamicOverlaySeries['ichi_spanA'] = mainChart.addLineSeries({ color: 'rgba(34, 197, 94, 0.7)', lineWidth: 1, lineStyle: 1, priceLineVisible: false });
+      dynamicOverlaySeries['ichi_spanB'] = mainChart.addLineSeries({ color: 'rgba(239, 68, 68, 0.7)', lineWidth: 1, lineStyle: 1, priceLineVisible: false });
     }
     const ichi = calcIchimokuData(times, candles, prec);
     dynamicOverlaySeries['ichi_tenkan'].setData(ichi.tenkan);
@@ -1262,8 +1186,8 @@ function renderChartData(candles) {
   // Envelopes
   if (activeIndicators.envelopes) {
     if (!dynamicOverlaySeries['env_u'] && mainChart) {
-      dynamicOverlaySeries['env_u'] = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, lineStyle: 2, priceLineVisible: false, autoscaleInfoProvider: () => null });
-      dynamicOverlaySeries['env_l'] = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, lineStyle: 2, priceLineVisible: false, autoscaleInfoProvider: () => null });
+      dynamicOverlaySeries['env_u'] = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, lineStyle: 2, priceLineVisible: false });
+      dynamicOverlaySeries['env_l'] = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, lineStyle: 2, priceLineVisible: false });
     }
     const env = calcEnvelopesData(times, closes, 20, 0.025, prec);
     dynamicOverlaySeries['env_u'].setData(env.upper);
@@ -1276,8 +1200,8 @@ function renderChartData(candles) {
   // 52 Week High / Low
   if (activeIndicators.hi_lo_52w) {
     if (!dynamicOverlaySeries['hi_52w'] && mainChart) {
-      dynamicOverlaySeries['hi_52w'] = mainChart.addLineSeries({ color: '#10b981', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false, autoscaleInfoProvider: () => null });
-      dynamicOverlaySeries['lo_52w'] = mainChart.addLineSeries({ color: '#ef4444', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false, autoscaleInfoProvider: () => null });
+      dynamicOverlaySeries['hi_52w'] = mainChart.addLineSeries({ color: '#10b981', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false });
+      dynamicOverlaySeries['lo_52w'] = mainChart.addLineSeries({ color: '#ef4444', lineWidth: 1.5, lineStyle: 2, priceLineVisible: false });
     }
     const hilo = calc52WeekHighLowData(times, candles, prec);
     dynamicOverlaySeries['hi_52w'].setData(hilo.high);
@@ -1947,8 +1871,8 @@ function handleLayoutRotation() {
     try {
       if (window.PaneSplitterManager) window.PaneSplitterManager.applyDomHeights();
       resizeAllCharts();
-      if (window.applyTimeframeScaleOptions) {
-        window.applyTimeframeScaleOptions(window.currentInterval);
+      if (mainChart && typeof mainChart.timeScale === 'function') {
+        mainChart.timeScale().fitContent();
       }
     } catch(e) {
       console.warn('[LayoutRotation] Handled safely:', e);
