@@ -519,7 +519,7 @@ window.OptimalEngine = {
         lastTextY = yMid;
         const volKTxt = this.formatVolK(b.vol, b.price);
         const ordTxt = `${b.ordersCount}o•${volKTxt}`;
-        ctx.font = isMobileScreen ? 'bold 7.6px "JetBrains Mono", monospace' : 'bold 8.8px "JetBrains Mono", monospace';
+        ctx.font = isMobileScreen ? 'bold 6.4px "JetBrains Mono", monospace' : 'bold 7.4px "JetBrains Mono", monospace';
         const txtX = isRight ? (cssW - 3) : (barX + totalW + 3);
         ctx.textAlign = isRight ? 'right' : 'left';
         ctx.textBaseline = 'middle';
@@ -549,7 +549,7 @@ window.OptimalEngine = {
 
       const labelTxt = `${isMax ? '▲' : '▼'}${compactPriceStr(price)}`;
       ctx.save();
-      ctx.font = isMobileScreen ? 'bold 7.6px "JetBrains Mono", monospace' : 'bold 8.6px "JetBrains Mono", monospace';
+      ctx.font = isMobileScreen ? 'bold 6.5px "JetBrains Mono", monospace' : 'bold 7.2px "JetBrains Mono", monospace';
       const tw = ctx.measureText(labelTxt).width;
       const placeLeft = x > (tw + 18);
       const lineEndX = placeLeft ? (x - 5) : (x + 5);
@@ -603,7 +603,7 @@ window.OptimalEngine = {
         ctx.setLineDash([]);
 
         // On iPhone: only the 2-4 char tag (e.g. "IN•L", "TP", "SL", "LIQ"); on PC: compact tag + short price ("IN 64000")
-        ctx.font = isMobileScreen ? 'bold 7.4px "JetBrains Mono", monospace' : 'bold 8.4px "JetBrains Mono", monospace';
+        ctx.font = isMobileScreen ? 'bold 6.3px "JetBrains Mono", monospace' : 'bold 7px "JetBrains Mono", monospace';
         const fullText = isMobileScreen ? microTag : `${microTag} ${compactPriceStr(price)}`;
         const tw = ctx.measureText(fullText).width;
         const pillH = isMobileScreen ? 9.5 : 11;
@@ -666,7 +666,7 @@ window.OptimalEngine = {
         if (yLive >= 12 && yLive <= cssH - 12) {
           const microLiveTxt = `${buyOrd1s}B/${sellOrd1s}S`;
           ctx.save();
-          ctx.font = isMobileScreen ? 'bold 7.2px "JetBrains Mono", monospace' : 'bold 8.2px "JetBrains Mono", monospace';
+          ctx.font = isMobileScreen ? 'bold 6px "JetBrains Mono", monospace' : 'bold 6.8px "JetBrains Mono", monospace';
           const bw = ctx.measureText(microLiveTxt).width + 5;
           const bh = isMobileScreen ? 9 : 10.5;
           const bx = Math.max(4, cssW - bw - 2);
