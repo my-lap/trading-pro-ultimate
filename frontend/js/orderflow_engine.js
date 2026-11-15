@@ -22,7 +22,7 @@ const OrderFlowEngine = {
     pocHighlight: true,      // Highlight candle POC level with bright frame
     opacity: 0.90,
     minCandleWidthPx: 74,    // Minimum pixel width per Footprint candle so numbers NEVER overlap
-    wideFootprintMode: true, // Default ON: auto-zoom Twin Chart to 12-16 wide candles (74px+ each)
+    wideFootprintMode: false, // Default OFF: allow 40-150+ candles zoom freely on PC & iPhone
     showLiquidationHeatmap: true,
     showOiCvdStrip: true,
     guidePanelOpen: false,

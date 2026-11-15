@@ -163,52 +163,17 @@ function applyTimeframeScaleOptions(tf) {
   const isMonthly = (tfRaw === '1M' || tfLower === '1mese' || tfLower === '1month');
   const isHighTf = isDaily || isWeekly || isMonthly;
 
-  // High-Density Time Scale & Maximum Time Domain Scope per Timeframe
-  let optimalBarSpacing = 8;
-  let minBarSpacing = 3;
-  let visibleBars = 95;
-
-  if (isSeconds) {
-    optimalBarSpacing = 8;
-    minBarSpacing = 3;
-    visibleBars = 95;
-  } else if (is1Min) {
-    optimalBarSpacing = 8;
-    minBarSpacing = 3;
-    visibleBars = 100;
-  } else if (is5Min) {
-    optimalBarSpacing = 8;
-    minBarSpacing = 3;
-    visibleBars = 95;
-  } else if (tfLower === '15m') {
-    optimalBarSpacing = 8;
-    minBarSpacing = 3;
-    visibleBars = 95;
-  } else if (tfLower === '30m') {
-    optimalBarSpacing = 8;
-    minBarSpacing = 3;
-    visibleBars = 95;
-  } else if (tfLower === '1h') {
-    optimalBarSpacing = 7;
-    minBarSpacing = 2.5;
-    visibleBars = 105;
-  } else if (tfLower === '4h') {
-    optimalBarSpacing = 7;
-    minBarSpacing = 2.5;
-    visibleBars = 105;
-  } else if (isDaily) {
-    optimalBarSpacing = 7;
-    minBarSpacing = 2;
-    visibleBars = 120;
-  } else if (isWeekly) {
-    optimalBarSpacing = 7;
-    minBarSpacing = 2;
-    visibleBars = 85;
-  } else if (isMonthly) {
-    optimalBarSpacing = 8;
-    minBarSpacing = 3;
-    visibleBars = 65;
+  if (typeof window.chartVisibleBars !== 'number' || !isFinite(window.chartVisibleBars)) {
+    window.chartVisibleBars = 45;
   }
+  if (typeof window.chartVertZoomMult !== 'number' || !isFinite(window.chartVertZoomMult)) {
+    window.chartVertZoomMult = 1.0;
+  }
+
+  // High-Density Time Scale & Persistent User Zoom Scope (45 default, 10..180 allowed)
+  let optimalBarSpacing = 8;
+  let minBarSpacing = 0.5;
+  let visibleBars = Math.max(10, Math.min(180, Math.round(window.chartVisibleBars)));
 
   const opts = {
     borderColor: '#1e293b',
@@ -253,6 +218,36 @@ function applyTimeframeScaleOptions(tf) {
   }
 }
 window.applyTimeframeScaleOptions = applyTimeframeScaleOptions;
+
+window.adjustChartZoomBars = function(deltaBars) {
+  window.chartVisibleBars = Math.max(10, Math.min(180, Math.round((window.chartVisibleBars || 45) + deltaBars)));
+  const candles = window.currentCandles || [];
+  if (mainChart && candles.length > 0) {
+    const lr = mainChart.timeScale().getVisibleLogicalRange();
+    const to = lr && isFinite(lr.to) ? lr.to : (candles.length - 1 + 6);
+    window.syncAllChartsLogicalRange({ from: to - window.chartVisibleBars, to }, true);
+  }
+  if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
+    OptimalEngine.calculateLocalVolumeProfile();
+    OptimalEngine.renderVolumeProfileOverlay();
+  }
+};
+
+window.resetChartAutoFit = function() {
+  window.chartVisibleBars = 45;
+  window.chartVertZoomMult = 1.0;
+  const candles = window.currentCandles || [];
+  if (mainChart && candles.length > 0) {
+    mainChart.priceScale('right').applyOptions({ autoScale: true });
+    const to = (candles.length - 1) + 6;
+    const from = Math.max(0, candles.length - 45);
+    window.syncAllChartsLogicalRange({ from, to }, true);
+  }
+  if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
+    OptimalEngine.calculateLocalVolumeProfile();
+    OptimalEngine.renderVolumeProfileOverlay();
+  }
+};
 
 // Master 1:1 Logical Range Synchronizer across ALL 5 charts (Main, Twin Footprint, Volume, Momentum, Sub2)
 window.syncAllChartsLogicalRange = function(range, redrawOverlays = true) {
@@ -346,6 +341,7 @@ function initMainChart() {
   });
 
   // Candlestick Series: Only this series has visible price badges on the vertical axis!
+  // Auto-Scale Y strictly locked to visible OHLC candles (+10% margin * user vertical zoom)
   candleSeries = mainChart.addCandlestickSeries({
     upColor: '#00f2a1',
     downColor: '#ff4560',
@@ -353,7 +349,28 @@ function initMainChart() {
     wickUpColor: '#00f2a1',
     wickDownColor: '#ff4560',
     lastValueVisible: true,
-    priceLineVisible: true
+    priceLineVisible: true,
+    autoscaleInfoProvider: (original) => {
+      const candles = window.currentCandles || [];
+      if (candles.length && mainChart && typeof mainChart.timeScale === 'function') {
+        const lr = mainChart.timeScale().getVisibleLogicalRange();
+        const from = lr && isFinite(lr.from) ? Math.max(0, Math.floor(lr.from)) : Math.max(0, candles.length - (window.chartVisibleBars || 45));
+        const to = lr && isFinite(lr.to) ? Math.min(candles.length - 1, Math.ceil(lr.to)) : candles.length - 1;
+        let minL = Infinity;
+        let maxH = -Infinity;
+        for (let i = from; i <= to; i++) {
+          const c = candles[i];
+          if (!c) continue;
+          if (c.low < minL) minL = c.low;
+          if (c.high > maxH) maxH = c.high;
+        }
+        if (isFinite(minL) && isFinite(maxH) && maxH > minL) {
+          const pad = (maxH - minL) * (0.10 * (window.chartVertZoomMult || 1.0));
+          return { priceRange: { minValue: minL - pad, maxValue: maxH + pad } };
+        }
+      }
+      return original();
+    }
   });
   window.mainCandleSeries = candleSeries;
   window.candleSeries = candleSeries;
@@ -364,10 +381,20 @@ function initMainChart() {
   const chartMainContainer = document.getElementById('main-chart');
   if (chartMainContainer) {
     let isChartDragging = false;
-    chartMainContainer.addEventListener('mousedown', () => { isChartDragging = true; });
+    let interactTimer = null;
+    const markUserInteracting = (active) => {
+      if (interactTimer) clearTimeout(interactTimer);
+      if (active) {
+        window.isChartUserInteracting = true;
+      } else {
+        interactTimer = setTimeout(() => { window.isChartUserInteracting = false; }, 350);
+      }
+    };
+    chartMainContainer.addEventListener('mousedown', () => { isChartDragging = true; markUserInteracting(true); });
     window.addEventListener('mouseup', () => {
       if (isChartDragging) {
         isChartDragging = false;
+        markUserInteracting(false);
         if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
           OptimalEngine.calculateLocalVolumeProfile();
           OptimalEngine.renderVolumeProfileOverlay();
@@ -379,6 +406,7 @@ function initMainChart() {
     });
     chartMainContainer.addEventListener('mousemove', () => {
       if (isChartDragging) {
+        markUserInteracting(true);
         requestAnimationFrame(() => {
           if (window.OrderFlowEngine && OrderFlowEngine.forecastConeVisible) {
             OrderFlowEngine.renderForecastCone();
@@ -389,7 +417,37 @@ function initMainChart() {
         });
       }
     });
-    chartMainContainer.addEventListener('touchmove', () => {
+    let pinchStartDist = 0;
+    let pinchStartBars = window.chartVisibleBars || 45;
+    chartMainContainer.addEventListener('touchstart', (e) => {
+      markUserInteracting(true);
+      if (e.touches && e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        pinchStartDist = Math.hypot(dx, dy) || 1;
+        pinchStartBars = window.chartVisibleBars || 45;
+      }
+    }, { passive: true });
+    chartMainContainer.addEventListener('touchend', () => {
+      pinchStartDist = 0;
+      markUserInteracting(false);
+    }, { passive: true });
+    chartMainContainer.addEventListener('touchmove', (e) => {
+      markUserInteracting(true);
+      if (e.touches && e.touches.length === 2 && pinchStartDist > 0) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy) || 1;
+        window.chartVisibleBars = Math.max(10, Math.min(180, Math.round(pinchStartBars * (pinchStartDist / dist))));
+        const candles = window.currentCandles || [];
+        if (candles.length > 0 && mainChart) {
+          const lr = mainChart.timeScale().getVisibleLogicalRange();
+          const to = lr && isFinite(lr.to) ? lr.to : (candles.length - 1 + 6);
+          window.syncAllChartsLogicalRange({ from: to - window.chartVisibleBars, to }, true);
+        }
+        return;
+      }
       requestAnimationFrame(() => {
         if (window.OrderFlowEngine && OrderFlowEngine.forecastConeVisible) {
           OrderFlowEngine.renderForecastCone();
@@ -398,9 +456,24 @@ function initMainChart() {
           OptimalEngine.renderVolumeProfileOverlay();
         }
       });
-    }, { passive: true });
+    }, { passive: false });
 
-    chartMainContainer.addEventListener('wheel', () => {
+    chartMainContainer.addEventListener('wheel', (e) => {
+      markUserInteracting(true);
+      markUserInteracting(false);
+      if (e.shiftKey) {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 0.88 : 1.14;
+        window.chartVertZoomMult = Math.max(0.35, Math.min(3.5, (window.chartVertZoomMult || 1.0) * factor));
+        if (mainChart) mainChart.priceScale('right').applyOptions({ autoScale: true });
+        if (window.OptimalEngine) {
+          const vpFactor = e.deltaY < 0 ? 1.1 : 0.91;
+          OptimalEngine.volumeProfileWidth = Math.max(60, Math.min(240, Math.round((OptimalEngine.volumeProfileWidth || 120) * vpFactor)));
+        }
+      } else if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        window.adjustChartZoomBars(e.deltaY < 0 ? -5 : 5);
+      }
       requestAnimationFrame(() => {
         if (window.OrderFlowEngine && OrderFlowEngine.forecastConeVisible) {
           OrderFlowEngine.renderForecastCone();
@@ -410,11 +483,15 @@ function initMainChart() {
           OptimalEngine.renderVolumeProfileOverlay();
         }
       });
-    }, { passive: true });
+    }, { passive: false });
   }
 
   mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
     if (window._isUpdatingRealtimeTick || !range) return;
+    if (typeof range.from === 'number' && typeof range.to === 'number') {
+      const span = Math.round(range.to - range.from);
+      if (span >= 10 && span <= 180) window.chartVisibleBars = span;
+    }
     if (window.OptimalEngine && OptimalEngine.volumeProfileVisible) {
       OptimalEngine.calculateLocalVolumeProfile();
       OptimalEngine.renderVolumeProfileOverlay();
@@ -439,118 +516,19 @@ function initMainChart() {
 
   // Indicators: Clean display, NO overlapping badge clutter on price axis!
   // Values are rendered cleanly in the on-chart live legend bar!
-  vwapSeries = mainChart.addLineSeries({
-    color: '#f59e0b',
-    lineWidth: 2,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  ema9Series = mainChart.addLineSeries({
-    color: '#00f2a1',
-    lineWidth: 1.5,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  ema21Series = mainChart.addLineSeries({
-    color: '#38bdf8',
-    lineWidth: 1.5,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  ema50Series = mainChart.addLineSeries({
-    color: '#f97316', // Orange
-    lineWidth: 1.5,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  ema200Series = mainChart.addLineSeries({
-    color: '#a855f7',
-    lineWidth: 2,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  // Arnaud Legoux Moving Average (ALMA)
-  almaSeries = mainChart.addLineSeries({
-    color: '#ec4899', // Pink
-    lineWidth: 2,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  // SuperTrend Quant Line
-  supertrendSeries = mainChart.addLineSeries({
-    color: '#00f2a1',
-    lineWidth: 2,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  bbUpperSeries = mainChart.addLineSeries({
-    color: 'rgba(99, 102, 241, 0.75)',
-    lineWidth: 1,
-    lineStyle: 2,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  bbMiddleSeries = mainChart.addLineSeries({
-    color: 'rgba(99, 102, 241, 0.4)',
-    lineWidth: 1,
-    lineStyle: 0,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  bbLowerSeries = mainChart.addLineSeries({
-    color: 'rgba(99, 102, 241, 0.75)',
-    lineWidth: 1,
-    lineStyle: 2,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  // Donchian Channels (20)
-  donchUpperSeries = mainChart.addLineSeries({
-    color: '#06b6d4', // Cyan
-    lineWidth: 1,
-    lineStyle: 1,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  donchLowerSeries = mainChart.addLineSeries({
-    color: '#06b6d4',
-    lineWidth: 1,
-    lineStyle: 1,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
-
-  sarSeries = mainChart.addLineSeries({
-    color: '#f43f5e',
-    lineWidth: 1,
-    lineStyle: 1,
-    title: '',
-    lastValueVisible: false,
-    priceLineVisible: false
-  });
+  vwapSeries = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  ema9Series = mainChart.addLineSeries({ color: '#00f2a1', lineWidth: 1.5, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  ema21Series = mainChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  ema50Series = mainChart.addLineSeries({ color: '#f97316', lineWidth: 1.5, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  ema200Series = mainChart.addLineSeries({ color: '#a855f7', lineWidth: 2, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  almaSeries = mainChart.addLineSeries({ color: '#ec4899', lineWidth: 2, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  supertrendSeries = mainChart.addLineSeries({ color: '#00f2a1', lineWidth: 2, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  bbUpperSeries = mainChart.addLineSeries({ color: 'rgba(99, 102, 241, 0.75)', lineWidth: 1, lineStyle: 2, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  bbMiddleSeries = mainChart.addLineSeries({ color: 'rgba(99, 102, 241, 0.4)', lineWidth: 1, lineStyle: 0, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  bbLowerSeries = mainChart.addLineSeries({ color: 'rgba(99, 102, 241, 0.75)', lineWidth: 1, lineStyle: 2, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  donchUpperSeries = mainChart.addLineSeries({ color: '#06b6d4', lineWidth: 1, lineStyle: 1, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  donchLowerSeries = mainChart.addLineSeries({ color: '#06b6d4', lineWidth: 1, lineStyle: 1, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
+  sarSeries = mainChart.addLineSeries({ color: '#f43f5e', lineWidth: 1, lineStyle: 1, title: '', lastValueVisible: false, priceLineVisible: false, autoscaleInfoProvider: () => null });
 
   // Init Sub-Panels (Volume, Momentum 1, Oscillator 2)
   initVolumePane();
@@ -1871,8 +1849,8 @@ function handleLayoutRotation() {
     try {
       if (window.PaneSplitterManager) window.PaneSplitterManager.applyDomHeights();
       resizeAllCharts();
-      if (mainChart && typeof mainChart.timeScale === 'function') {
-        mainChart.timeScale().fitContent();
+      if (window.applyTimeframeScaleOptions) {
+        window.applyTimeframeScaleOptions(window.currentInterval);
       }
     } catch(e) {
       console.warn('[LayoutRotation] Handled safely:', e);
@@ -4352,14 +4330,13 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
       prevRange = mainChart.timeScale().getVisibleLogicalRange();
     }
   } catch (e) {}
-  const isWideFpNow = !!(window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible && window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.wideFootprintMode);
-  const defaultSpan = isWideFpNow ? (window.innerWidth < 768 ? 6 : 13) : 85;
+  const defaultSpan = window.chartVisibleBars || 45;
   const prevSpan = (prevRange && prevRange.to > prevRange.from)
-    ? Math.max(4, Math.min(220, prevRange.to - prevRange.from))
+    ? Math.max(10, Math.min(220, prevRange.to - prevRange.from))
     : defaultSpan;
   const prevRightSpace = (prevRange && typeof prevRange.to === 'number')
     ? Math.max(1.8, Math.min(12, prevRange.to - (prevLen - 1)))
-    : (isWideFpNow ? 2.5 : 6);
+    : 6;
   // Determine if user is watching live right edge
   const isWatchingLiveEdge = !prevRange || (prevRange.to >= prevLen - 10);
 
@@ -4458,13 +4435,15 @@ function onRealtimePriceTick(price, volume, timestamp, tickSym) {
   if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = false;
 
   // PIN RIGHT-EDGE POSITION: All 5 charts share the exact same 1:1 LogicalRange {from, to}!
-  if (isWatchingLiveEdge && typeof window.syncAllChartsLogicalRange === 'function') {
-    const totalBarsNow = window.currentCandles.length;
-    const lockedTo = (totalBarsNow - 1) + prevRightSpace;
-    const lockedFrom = lockedTo - prevSpan;
-    window.syncAllChartsLogicalRange({ from: lockedFrom, to: lockedTo }, true);
-  } else if (prevRange && typeof window.syncAllChartsLogicalRange === 'function') {
-    window.syncAllChartsLogicalRange(prevRange, true);
+  if (!window.isChartUserInteracting) {
+    if (isWatchingLiveEdge && typeof window.syncAllChartsLogicalRange === 'function') {
+      const totalBarsNow = window.currentCandles.length;
+      const lockedTo = (totalBarsNow - 1) + prevRightSpace;
+      const lockedFrom = lockedTo - prevSpan;
+      window.syncAllChartsLogicalRange({ from: lockedFrom, to: lockedTo }, true);
+    } else if (prevRange && typeof window.syncAllChartsLogicalRange === 'function') {
+      window.syncAllChartsLogicalRange(prevRange, true);
+    }
   }
 
   // Update on-chart legend in real time (OHLC and percentages)
@@ -4553,14 +4532,13 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
       prevRange = mainChart.timeScale().getVisibleLogicalRange();
     }
   } catch(e) {}
-  const isWideFpNow = !!(window.OrderFlowEngine && window.OrderFlowEngine.twinFootprintChartVisible && window.OrderFlowEngine.footprintSettings && window.OrderFlowEngine.footprintSettings.wideFootprintMode);
-  const defaultSpan = isWideFpNow ? (window.innerWidth < 768 ? 6 : 13) : 85;
+  const defaultSpan = window.chartVisibleBars || 45;
   const prevSpan = (prevRange && prevRange.to > prevRange.from)
-    ? Math.max(4, Math.min(220, prevRange.to - prevRange.from))
+    ? Math.max(10, Math.min(220, prevRange.to - prevRange.from))
     : defaultSpan;
   const prevRightSpace = (prevRange && typeof prevRange.to === 'number')
     ? Math.max(1.8, Math.min(12, prevRange.to - (prevLen - 1)))
-    : (isWideFpNow ? 2.5 : 6);
+    : 6;
   const isWatchingLiveEdge = !prevRange || (prevRange.to >= prevLen - 10);
 
   const lastIdx = window.currentCandles.length - 1;
@@ -4590,13 +4568,15 @@ function onRealtimeKlineUpdate(klineData, tickSym) {
   isSyncingRange = false;
   if (window.OrderFlowEngine) window.OrderFlowEngine._isSyncingTwinRange = false;
 
-  if (isWatchingLiveEdge && typeof window.syncAllChartsLogicalRange === 'function') {
-    const totalBarsNow = window.currentCandles.length;
-    const lockedTo = (totalBarsNow - 1) + prevRightSpace;
-    const lockedFrom = lockedTo - prevSpan;
-    window.syncAllChartsLogicalRange({ from: lockedFrom, to: lockedTo }, true);
-  } else if (prevRange && typeof window.syncAllChartsLogicalRange === 'function') {
-    window.syncAllChartsLogicalRange(prevRange, true);
+  if (!window.isChartUserInteracting) {
+    if (isWatchingLiveEdge && typeof window.syncAllChartsLogicalRange === 'function') {
+      const totalBarsNow = window.currentCandles.length;
+      const lockedTo = (totalBarsNow - 1) + prevRightSpace;
+      const lockedFrom = lockedTo - prevSpan;
+      window.syncAllChartsLogicalRange({ from: lockedFrom, to: lockedTo }, true);
+    } else if (prevRange && typeof window.syncAllChartsLogicalRange === 'function') {
+      window.syncAllChartsLogicalRange(prevRange, true);
+    }
   }
 
   if (volumeHistogramSeries) {
