@@ -3,12 +3,26 @@
 // OpenRouter (:free) | Groq | Cerebras | Mistral | GitHub | AI Studio | Ollama/:4000
 // ==========================================================================
 (function () {
-  const FALLBACK_STATIC_MODELS = [
-    { id: 'openrouter/free', label: 'openrouter/free (Router Universale Auto-Free 0€)' },
-    { id: 'qwen/qwen3-coder:free', label: 'Qwen3 Coder :free' },
-    { id: 'deepseek/deepseek-r1-0528:free', label: 'DeepSeek R1 :free' },
-    { id: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B :free' }
+  const DEFAULT_MODELS = [
+    { id: 'openrouter/free', label: 'openrouter/free — Router Universale Auto-Free (0,00€)', group: 'ROUTER UNIVERSALE' },
+    // DEEPSEEK TOP SUITE (0,00€)
+    { id: 'deepseek/deepseek-r1:free', label: 'DeepSeek-R1 Full Reasoning (671B MoE — 0,00€)', group: 'DEEPSEEK TOP SUITE (0,00€)' },
+    { id: 'deepseek/deepseek-chat-v3-0324:free', label: 'DeepSeek V3 0324 Ultra-Fast (685B MoE — 0,00€)', group: 'DEEPSEEK TOP SUITE (0,00€)' },
+    { id: 'deepseek/deepseek-r1-zero:free', label: 'DeepSeek-R1-Zero Pure RL (0,00€)', group: 'DEEPSEEK TOP SUITE (0,00€)' },
+    { id: 'deepseek/deepseek-r1-distill-llama-70b:free', label: 'DeepSeek-R1 Distill Llama 70B (0,00€)', group: 'DEEPSEEK TOP SUITE (0,00€)' },
+    { id: 'deepseek/deepseek-r1-distill-qwen-32b:free', label: 'DeepSeek-R1 Distill Qwen 32B (0,00€)', group: 'DEEPSEEK TOP SUITE (0,00€)' },
+    { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek-R1 Distill Llama 70B (Groq LPU 800 tok/s — 0,00€)', group: 'DEEPSEEK TOP SUITE (0,00€)', provider: 'groq' },
+    // QWEN FULL SUITE (8B -> 235B — 0,00€)
+    { id: 'qwen/qwen3-8b:free', label: 'Qwen 3 (8B) Ultra-Light & Fast (0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)' },
+    { id: 'qwen/qwen3-14b:free', label: 'Qwen 3 (14B) Balanced (0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)' },
+    { id: 'qwen/qwen3-32b:free', label: 'Qwen 3 (32B) High-Precision (0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)' },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct:free', label: 'Qwen 2.5 Coder 32B (Top Coding/Trading — 0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)' },
+    { id: 'qwen/qwq-32b:free', label: 'Qwen QwQ 32B Reasoning Quantitativo (0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)' },
+    { id: 'qwen/qwen-2.5-72b-instruct:free', label: 'Qwen 2.5 (72B) Flagship (0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)' },
+    { id: 'qwen/qwen3-235b-a22b:free', label: 'Qwen 3 (235B MoE) Massima Potenza (0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)' },
+    { id: 'qwen-qwq-32b', label: 'Qwen QwQ 32B (Groq LPU Instant — 0,00€)', group: 'QWEN FULL SUITE (8B -> 235B — 0,00€)', provider: 'groq' }
   ];
+  const FALLBACK_STATIC_MODELS = DEFAULT_MODELS;
 
   const PRIORITY_PREFIXES = ['qwen', 'deepseek', 'llama', 'gemini', 'mistral'];
 
@@ -50,9 +64,11 @@
 
     parseModelsPayload(json) {
       const list = Array.isArray(json?.data) ? json.data : [];
-      const freeOnes = list
+      const seen = new Set(DEFAULT_MODELS.map(m => m.id));
+      const liveExtras = list
         .filter(m => {
           const id = m?.id || '';
+          if (!id || seen.has(id)) return false;
           const promptPrice = String(m?.pricing?.prompt ?? '');
           return id.endsWith(':free') || promptPrice === '0';
         })
@@ -62,12 +78,15 @@
           if (sa !== sb) return sa - sb;
           return (a.id || '').localeCompare(b.id || '');
         })
-        .slice(0, 40)
-        .map(m => ({ id: m.id, label: `${m.name || m.id} (${m.id})` }));
-      return [
-        { id: 'openrouter/free', label: 'openrouter/free (Router Universale Auto-Free 0€)' },
-        ...freeOnes.filter(m => m.id !== 'openrouter/free')
-      ];
+        .slice(0, 35)
+        .map(m => {
+          const low = (m.id || '').toLowerCase();
+          const group = low.includes('deepseek')
+            ? 'DEEPSEEK TOP SUITE (0,00€)'
+            : (low.includes('qwen') ? 'QWEN FULL SUITE (8B -> 235B — 0,00€)' : 'ALTRI MODELLI :FREE LIVE (0,00€)');
+          return { id: m.id, label: `${m.name || m.id} (${m.id})`, group };
+        });
+      return [...DEFAULT_MODELS, ...liveExtras];
     },
 
     async discoverFreeModels(force = false) {
@@ -89,13 +108,32 @@
       return this.discoveredModels;
     },
 
+    renderModelOptionsHtml(selectedId) {
+      const current = selectedId || this.primaryModel || 'openrouter/free';
+      const groups = new Map();
+      this.discoveredModels.forEach(m => {
+        const g = m.group || 'ALTRI MODELLI :FREE (0,00€)';
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push(m);
+      });
+      let html = '';
+      groups.forEach((items, gName) => {
+        if (gName === 'ROUTER UNIVERSALE') {
+          items.forEach(m => { html += `<option value="${m.id}" ${m.id === current ? 'selected' : ''}>${m.label}</option>`; });
+        } else {
+          html += `<optgroup label="${gName}">`;
+          items.forEach(m => { html += `<option value="${m.id}" ${m.id === current ? 'selected' : ''}>${m.label}</option>`; });
+          html += `</optgroup>`;
+        }
+      });
+      return html;
+    },
+
     populateModelSelectDOM() {
       const sel = document.getElementById('free-llm-model-select');
       if (!sel) return;
       const current = this.primaryModel || 'openrouter/free';
-      sel.innerHTML = this.discoveredModels.map(m =>
-        `<option value="${m.id}" ${m.id === current ? 'selected' : ''}>${m.label}</option>`
-      ).join('');
+      sel.innerHTML = this.renderModelOptionsHtml(current);
       if (!this.discoveredModels.some(m => m.id === current)) {
         sel.value = 'openrouter/free';
         this.primaryModel = 'openrouter/free';
@@ -311,9 +349,7 @@
         document.body.appendChild(modal);
       }
       const savedKey = this.getStoredKey('OPENROUTER_FREE_KEY');
-      const opts = this.discoveredModels.map(m =>
-        `<option value="${m.id}" ${m.id === this.primaryModel ? 'selected' : ''}>${m.label}</option>`
-      ).join('');
+      const opts = this.renderModelOptionsHtml(this.primaryModel);
       modal.innerHTML = `
         <div style="width:100%; max-width:680px; max-height:90vh; overflow-y:auto; background:#0b1220; border:1.5px solid #00f2a1; border-radius:12px; padding:16px; color:#e2e8f0; font-family:var(--font-mono, monospace); box-shadow:0 20px 50px rgba(0,0,0,0.75);">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #1e293b;">
