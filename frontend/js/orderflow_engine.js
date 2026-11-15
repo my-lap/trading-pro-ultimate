@@ -1887,7 +1887,7 @@ const OrderFlowEngine = {
     renderBadge(targetX, lowerY, `Supporto $${lowerSupport.toFixed(2)}`, `-${(supportLossPct * 100).toFixed(1)}% Max Risk`, '#f97316');
 
     ctx.restore();
-  }
+  },
 
   // =========================================================================
   // v27.0: 4-QUADRANTS ORDERBLOCK MICROSTRUCTURE & AUTO-TRADER CONNECTOR
