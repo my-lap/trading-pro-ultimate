@@ -9,48 +9,90 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '29.7-argon',
+    version: '29.8-PRO-GRID',
     isVisible: true,
+    storageKey: 'QRO_LAYOUT_PARAMS_V298',
     params: {
-      drawerHeight: 620,      // Altezza totale del cassetto in pixel
-      subChart1Height: 180,   // Altezza Sub-Grafico A (Flussi)
-      subChart2Height: 260,   // Altezza Sub-Grafico B (Base Parametrizzata)
-      vpLookback: 60,         // Finestra candele per Volume Profile
-      vpRows: 24,             // Numero righe/bin del VRVP
-      vwapSigmaSpike: 2.5,    // Sensibilità σ per reset VWAP Ancorato
-      vpinBucketSize: 1200,   // Dimensione bucket per tossicità VPIN
-      vpinToxicThreshold: 0.68, // Soglia di allarme tossicità VPIN
-      vsaFrictionThreshold: 2.2, // Soglia indice di attrito VSA
-      subChart1Mode: 'CVD_VPIN', // Vista Sub-Grafico A
-      tradingMode: 'SEMI'     // Modalità operativa
+      drawerHeight: 680,
+      subChart1Height: 180,     // 120..340px
+      subChart2Height: 260,     // 180..460px
+      vrvpZoneW: 115,           // 80..240px
+      rightAxisW: 68,           // 55..115px
+      candleWidthPct: 72,       // 40..92%
+      efSplitPct: 55,           // 35..75%
+      timeGridSteps: 8,         // 4..16
+      showAvwap: true,
+      showPocLine: true,
+      showValueArea: true,
+      vpLookback: 60,
+      vpRows: 24,
+      vwapSigmaSpike: 2.5,
+      vpinBucketSize: 1200,
+      vpinToxicThreshold: 0.68,
+      vsaFrictionThreshold: 2.2,
+      subChart1Mode: 'CVD_VPIN',
+      tradingMode: 'SEMI'
     },
     state: {
       candles: [],
       metrics: [],
       vpLevels: { poc: 0, vah: 0, val: 0, hvn: [], lvn: [], bins: [] },
       signal: { score: 0, action: 'NEUTRALE', reasons: [], modeAction: '' },
-      hoverIdx: -1
+      hoverIdx: -1,
+      lastVis: null
+    },
+
+    loadSavedParams() {
+      try {
+        const raw = localStorage.getItem(this.storageKey);
+        if (raw) Object.assign(this.params, JSON.parse(raw));
+      } catch (e) {}
+    },
+
+    saveParams() {
+      try {
+        localStorage.setItem(this.storageKey, JSON.stringify(this.params));
+      } catch (e) {}
     },
 
     init() {
+      this.loadSavedParams();
       this.injectDrawerDOM();
+      this.applyEfSplit();
       this.syncAndRender();
       setInterval(() => {
         if (this.isVisible) this.syncAndRender();
       }, 500);
     },
 
+    applyEfSplit() {
+      document.documentElement.style.setProperty('--qro-ef-split', `${this.params.efSplitPct}%`);
+      const dock = document.getElementById('v27-orderblock-scanner-dock');
+      if (dock) dock.style.maxHeight = `${Math.round(this.params.efSplitPct * 6.5)}px`;
+    },
+
     injectDrawerDOM() {
       if (document.getElementById('quant-readonly-drawer')) return;
+      if (!document.getElementById('qro-v298-resizable-css')) {
+        const st = document.createElement('style');
+        st.id = 'qro-v298-resizable-css';
+        st.textContent = `
+          #qro-kpi-grid > div { resize: horizontal; overflow: auto; min-width: 125px; }
+          #v27-orderblock-scanner-dock th, #bybit-orderbook-card th, .ef-live-table th {
+            resize: horizontal; overflow: hidden; min-width: 58px;
+          }
+        `;
+        document.head.appendChild(st);
+      }
       const drawer = document.createElement('section');
       drawer.id = 'quant-readonly-drawer';
       drawer.style.cssText = `background:#060a12; border-top:2px solid #00e5ff; padding:12px 14px; font-family:system-ui,monospace; color:#e2e8f0; margin-top:8px; box-sizing:border-box;`;
       
       drawer.innerHTML = `
-        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; background:#0b121e; padding:8px 12px; border-radius:6px; border:1px solid rgba(0,229,255,0.25);">
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; background:#0b121e; padding:8px 12px; border-radius:6px; border:1px solid rgba(0,229,255,0.25);">
           <div>
-            <b style="color:#ffab00; font-size:13.5px;">🛡️ SALA OPERATIVA QUANTITATIVA ZERO-TOUCH (SOLA LETTURA)</b>
-            <span id="qro-sync-badge" style="margin-left:8px; font-size:11px; color:#00e676;">● Sincronizzato al secondo col Grafico 1</span>
+            <b style="color:#ffab00; font-size:13.5px;">🛡️ SALA OPERATIVA QUANTITATIVA v29.8-PRO-GRID (ZERO-TOUCH)</b>
+            <span id="qro-sync-badge" style="margin-left:8px; font-size:11px; color:#00e676;">● Griglia & Mirino Sincronizzati</span>
           </div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <select id="qro-mode-select" style="background:#050911; color:#00e676; border:1px solid #00e676; padding:4px 8px; border-radius:5px; font-weight:700; font-size:11.5px;">
@@ -68,7 +110,27 @@
         </div>
 
         <div id="qro-body">
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(155px, 1fr)); gap:6px; margin-bottom:10px;">
+          <!-- BARRA LAYOUT & GRIGLIA (SALVATA IN LOCALSTORAGE) -->
+          <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; background:#08101c; border:1px solid rgba(56,189,248,0.25); padding:7px 10px; border-radius:6px; margin-bottom:8px; font-size:10.5px;">
+            <b style="color:#38bdf8;">🎛️ Layout & Griglia:</b>
+            <label>Alt. A: <b id="qro-lbl-subChart1Height">${this.params.subChart1Height}</b>px <input type="range" min="120" max="340" step="10" value="${this.params.subChart1Height}" data-param="subChart1Height" class="qro-slider" style="width:65px; accent-color:#38bdf8;" /></label>
+            <label>Alt. B: <b id="qro-lbl-subChart2Height">${this.params.subChart2Height}</b>px <input type="range" min="180" max="460" step="10" value="${this.params.subChart2Height}" data-param="subChart2Height" class="qro-slider" style="width:65px; accent-color:#38bdf8;" /></label>
+            <label>Largh. VRVP: <b id="qro-lbl-vrvpZoneW">${this.params.vrvpZoneW}</b>px <input type="range" min="80" max="240" step="5" value="${this.params.vrvpZoneW}" data-param="vrvpZoneW" class="qro-slider" style="width:65px; accent-color:#ffd54f;" /></label>
+            <label>Asse Prezzi: <b id="qro-lbl-rightAxisW">${this.params.rightAxisW}</b>px <input type="range" min="55" max="115" step="5" value="${this.params.rightAxisW}" data-param="rightAxisW" class="qro-slider" style="width:60px; accent-color:#ffd54f;" /></label>
+            <label>Spessore Candele: <b id="qro-lbl-candleWidthPct">${this.params.candleWidthPct}</b>% <input type="range" min="40" max="92" step="2" value="${this.params.candleWidthPct}" data-param="candleWidthPct" class="qro-slider" style="width:60px; accent-color:#00e676;" /></label>
+            <label>Split Campo 1s: <b id="qro-lbl-efSplitPct">${this.params.efSplitPct}</b>% <input type="range" min="35" max="75" step="5" value="${this.params.efSplitPct}" data-param="efSplitPct" class="qro-slider" style="width:60px; accent-color:#e040fb;" /></label>
+            <label>Griglia Tempo: <b id="qro-lbl-timeGridSteps">${this.params.timeGridSteps}</b> <input type="range" min="4" max="16" step="1" value="${this.params.timeGridSteps}" data-param="timeGridSteps" class="qro-slider" style="width:55px; accent-color:#00e5ff;" /></label>
+            <label style="cursor:pointer;"><input type="checkbox" data-check="showAvwap" class="qro-check" ${this.params.showAvwap ? 'checked' : ''} /> VWAP Anc.</label>
+            <label style="cursor:pointer;"><input type="checkbox" data-check="showPocLine" class="qro-check" ${this.params.showPocLine ? 'checked' : ''} /> POC Oro</label>
+            <label style="cursor:pointer;"><input type="checkbox" data-check="showValueArea" class="qro-check" ${this.params.showValueArea ? 'checked' : ''} /> VA 70%</label>
+          </div>
+
+          <!-- BARRA HUD MIRINO MAGNETICO SINCRONIZZATO -->
+          <div id="qro-crosshair-hud" style="background:#050911; border:1px solid rgba(0,229,255,0.22); padding:5px 10px; border-radius:5px; margin-bottom:8px; font-size:11px; font-family:monospace; color:#cbd5e1;">
+            🎯 <b>Mirino Sincronizzato:</b> passa il mouse sui Sub-Grafici per ispezionare Ora HH:MM:SS, Close, Delta, CVD, VPIN %, VSA e VWAP.
+          </div>
+
+          <div id="qro-kpi-grid" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
             <div style="background:#0a101a; padding:6px 10px; border-radius:5px; border:1px solid rgba(255,255,255,0.08);">
               <div style="font-size:10px; color:#94a3b8;">PUNTEGGIO PONDERATO</div>
               <div id="qro-kpi-score" style="font-size:13px; font-weight:800; color:#00e676;">+0/100</div>
@@ -194,7 +256,36 @@
           this.params[p] = v;
           const lbl = document.getElementById(`qro-lbl-${p}`);
           if (lbl) lbl.textContent = e.target.value;
+          if (p === 'efSplitPct') this.applyEfSplit();
+          this.saveParams();
           this.syncAndRender();
+        });
+      });
+      document.querySelectorAll('.qro-check').forEach(ch => {
+        ch.addEventListener('change', (e) => {
+          const p = e.target.getAttribute('data-check');
+          this.params[p] = !!e.target.checked;
+          this.saveParams();
+          this.syncAndRender();
+        });
+      });
+      ['qro-subchart-flows', 'qro-subchart-base'].forEach(id => {
+        const cv = document.getElementById(id);
+        if (!cv) return;
+        cv.addEventListener('mousemove', (e) => {
+          if (!this.state.lastVis || !this.state.lastVis.candles.length) return;
+          const rect = cv.getBoundingClientRect();
+          const plotW = Math.max(40, (cv.width - this.params.rightAxisW) - this.params.vrvpZoneW);
+          const relX = (e.clientX - rect.left) * (cv.width / (rect.width || cv.width));
+          const n = this.state.lastVis.candles.length;
+          const idx = Math.floor((relX / plotW) * n);
+          this.state.hoverIdx = (idx >= 0 && idx < n) ? idx : -1;
+          this.drawCharts(this.state.lastVis);
+          this.updateCrosshairHUD(this.state.lastVis);
+        });
+        cv.addEventListener('mouseleave', () => {
+          this.state.hoverIdx = -1;
+          if (this.state.lastVis) this.drawCharts(this.state.lastVis);
         });
       });
       document.getElementById('qro-audit-btn').addEventListener('click', () => this.runFreeAIAudit());
@@ -275,10 +366,12 @@
       this.state.candles = hostCandles;
       this.computeMetrics();
       const vis = this.getAlignedVisibleSlice();
+      this.state.lastVis = vis;
       this.computeVRVP(vis.candles);
       this.computeCompositeSignal(vis);
       this.drawCharts(vis);
       this.updateHUD();
+      this.updateCrosshairHUD(vis);
     },
 
     computeMetrics() {
@@ -361,7 +454,20 @@
         else if (b.vol <= avgV * 0.50) { b.type = 'LVN'; lvn.push(b.priceMid); }
       });
       pocBin.type = 'POC';
-      this.state.vpLevels = { poc: pocBin.priceMid, hvn, lvn, bins };
+      // Calcolo Value Area 70% (VAH / VAL) attorno al POC
+      const totalVol = bins.reduce((a, b) => a + b.vol, 0) || 1;
+      const pocIdx = bins.indexOf(pocBin);
+      let lo = pocIdx, hi = pocIdx, acc = pocBin.vol;
+      while (acc < totalVol * 0.70 && (lo > 0 || hi < bins.length - 1)) {
+        const vLo = lo > 0 ? bins[lo - 1].vol : -1;
+        const vHi = hi < bins.length - 1 ? bins[hi + 1].vol : -1;
+        if (vHi >= vLo && hi < bins.length - 1) { hi++; acc += bins[hi].vol; }
+        else if (lo > 0) { lo--; acc += bins[lo].vol; }
+        else break;
+      }
+      const vah = bins[hi].priceHigh;
+      const val = bins[lo].priceLow;
+      this.state.vpLevels = { poc: pocBin.priceMid, vah, val, hvn, lvn, bins };
     },
 
     computeCompositeSignal(vis) {
@@ -398,9 +504,56 @@
       };
     },
 
-    formatTime(ts) {
+    formatTime(ts, withSec = false) {
       const d = new Date(ts);
-      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      return withSec ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+    },
+
+    getPriceDec(price) {
+      if (window.getDynamicPrecision) return window.getDynamicPrecision(price, window.currentSymbol);
+      return Math.abs(price) < 1 ? 5 : (Math.abs(price) < 10 ? 4 : 2);
+    },
+
+    updateCrosshairHUD(vis) {
+      const hud = document.getElementById('qro-crosshair-hud');
+      if (!hud || !vis || !vis.candles.length) return;
+      const idx = (this.state.hoverIdx >= 0 && this.state.hoverIdx < vis.candles.length)
+        ? this.state.hoverIdx
+        : vis.candles.length - 1;
+      const c = vis.candles[idx];
+      const m = vis.metrics[idx];
+      if (!c || !m) return;
+      const dec = this.getPriceDec(c.close);
+      hud.innerHTML = `🎯 <b>Mirino (${this.state.hoverIdx >= 0 ? 'Cursore' : 'Live'}):</b> Ora <b style="color:#fff;">${this.formatTime(c.time, true)}</b> | Close <b style="color:#00e676;">${c.close.toFixed(dec)}</b> | Delta <b style="color:${m.delta >= 0 ? '#00e676' : '#ff5252'};">${(m.delta / 1000).toFixed(2)}k</b> | CVD <b style="color:#00e5ff;">${(m.cvd / 1000).toFixed(1)}k</b> | VPIN <b style="color:#ffab00;">${(m.vpin * 100).toFixed(1)}%</b> | VSA <b style="color:#e040fb;">${m.vsaFriction.toFixed(2)}</b> | VWAP <b style="color:#38bdf8;">${m.avwap.toFixed(dec)}</b>`;
+    },
+
+    drawTimeGrid(ctx, candles, plotW, topPad, botY, H, steps) {
+      const n = candles.length;
+      const every = Math.max(1, Math.floor(n / Math.max(4, Math.min(16, steps))));
+      for (let i = 0; i < n; i += every) {
+        const x = (i + 0.5) * (plotW / n);
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, botY); ctx.stroke();
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        ctx.fillText(this.formatTime(candles[i].time), Math.max(2, x - 14), H - 5);
+      }
+    },
+
+    drawMagneticCrosshair(ctx, candles, plotW, topPad, botY) {
+      const idx = this.state.hoverIdx;
+      if (idx < 0 || idx >= candles.length) return;
+      const x = (idx + 0.5) * (plotW / candles.length);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.72)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, botY); ctx.stroke();
+      ctx.restore();
     },
 
     drawCharts(vis) {
@@ -408,19 +561,24 @@
       const metrics = vis.metrics;
       if (!candles.length) return;
 
-      const dec = candles[candles.length - 1].close < 5 ? 4 : 2;
-      const rightAxisW = 64, vrvpZoneW = 115;
+      const dec = this.getPriceDec(candles[candles.length - 1].close);
+      const rightAxisW = parseInt(this.params.rightAxisW, 10) || 68;
+      const vrvpZoneW = parseInt(this.params.vrvpZoneW, 10) || 115;
+      const candleRatio = (parseFloat(this.params.candleWidthPct) || 72) / 100;
+      const gridSteps = parseInt(this.params.timeGridSteps, 10) || 8;
 
       const cv1 = document.getElementById('qro-subchart-flows');
       if (cv1) {
+        cv1.style.minHeight = `${this.params.subChart1Height}px`;
         const ctx = cv1.getContext('2d');
         const W = cv1.width = cv1.clientWidth || 960;
-        const H = cv1.height = this.params.subChart1Height;
+        const H = cv1.height = parseInt(this.params.subChart1Height, 10) || 180;
         ctx.fillStyle = '#060a10'; ctx.fillRect(0, 0, W, H);
 
-        const chartW = W - rightAxisW, plotW = chartW - vrvpZoneW;
-        const stepX = plotW / candles.length, topPad = 14, botPad = 18, plotH = H - topPad - botPad;
-        const barW = Math.max(2, Math.min(34, stepX * 0.68));
+        const chartW = W - rightAxisW, plotW = Math.max(60, chartW - vrvpZoneW);
+        const stepX = plotW / candles.length, topPad = 14, botPad = 20, plotH = H - topPad - botPad;
+        const barW = Math.max(2, Math.min(34, stepX * candleRatio));
+        this.drawTimeGrid(ctx, candles, plotW, topPad, H - botPad, H, gridSteps);
 
         if (this.params.subChart1Mode === 'CVD_VPIN') {
           const maxD = Math.max(...metrics.map(m => Math.abs(m.delta)), 1);
@@ -458,13 +616,15 @@
             ctx.fillRect(x - barW / 2, topPad + plotH - h, barW, Math.max(2, h));
           });
         }
+        this.drawMagneticCrosshair(ctx, candles, plotW, topPad, H - botPad);
       }
 
       const cv2 = document.getElementById('qro-subchart-base');
       if (cv2) {
+        cv2.style.minHeight = `${this.params.subChart2Height}px`;
         const ctx = cv2.getContext('2d');
         const W = cv2.width = cv2.clientWidth || 960;
-        const H = cv2.height = this.params.subChart2Height;
+        const H = cv2.height = parseInt(this.params.subChart2Height, 10) || 260;
         ctx.fillStyle = '#05080e'; ctx.fillRect(0, 0, W, H);
 
         const minLow = Math.min(...candles.map(c => c.low));
@@ -472,18 +632,41 @@
         const padP = Math.max(1e-6, (maxHigh - minLow) * 0.12);
         const minP = minLow - padP, maxP = maxHigh + padP;
 
-        const chartW = W - rightAxisW, plotW = chartW - vrvpZoneW;
-        const stepX = plotW / candles.length, topPad = 14, botPad = 20, plotH = H - topPad - botPad;
+        const chartW = W - rightAxisW, plotW = Math.max(60, chartW - vrvpZoneW);
+        const stepX = plotW / candles.length, topPad = 14, botPad = 22, plotH = H - topPad - botPad;
         const yOf = (p) => topPad + ((maxP - p) / (maxP - minP || 1e-8)) * plotH;
+
+        this.drawTimeGrid(ctx, candles, plotW, topPad, H - botPad, H, gridSteps);
 
         for (let g = 0; g <= 4; g++) {
           const y = topPad + (g / 4) * plotH;
-          ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
           ctx.fillStyle = '#8fa1b3'; ctx.font = '10px monospace';
           ctx.fillText((maxP - (g / 4) * (maxP - minP)).toFixed(dec), chartW + 5, y + 3);
         }
 
-        const barW = Math.max(2, Math.min(34, stepX * 0.72));
+        // Fascia Value Area 70% (VAH / VAL)
+        if (this.params.showValueArea && this.state.vpLevels.vah && this.state.vpLevels.val) {
+          const yVah = yOf(this.state.vpLevels.vah), yVal = yOf(this.state.vpLevels.val);
+          ctx.fillStyle = 'rgba(0, 229, 255, 0.07)';
+          ctx.fillRect(0, Math.min(yVah, yVal), chartW, Math.abs(yVal - yVah));
+          ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(0, yVah); ctx.lineTo(chartW, yVah); ctx.moveTo(0, yVal); ctx.lineTo(chartW, yVal); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Linea POC tratteggiata oro
+        if (this.params.showPocLine && this.state.vpLevels.poc) {
+          const yPoc = yOf(this.state.vpLevels.poc);
+          ctx.strokeStyle = '#ffd54f';
+          ctx.lineWidth = 1.4;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath(); ctx.moveTo(0, yPoc); ctx.lineTo(chartW, yPoc); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        const barW = Math.max(2, Math.min(34, stepX * candleRatio));
         candles.forEach((c, i) => {
           const m = metrics[i];
           const x = (i + 0.5) * stepX;
@@ -496,6 +679,19 @@
           ctx.fillRect(x - barW / 2, yOf(Math.max(c.open, c.close)), barW, Math.max(2, yOf(Math.min(c.open, c.close)) - yOf(Math.max(c.open, c.close))));
         });
 
+        // Curva VWAP Ancorato (#38bdf8)
+        if (this.params.showAvwap) {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          metrics.forEach((m, i) => {
+            const x = (i + 0.5) * stepX;
+            const y = yOf(m.avwap);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        }
+
         (this.state.vpLevels.bins || []).forEach(b => {
           const y1 = yOf(b.priceHigh), y2 = yOf(b.priceLow);
           const bh = Math.max(2, Math.abs(y2 - y1) - 1), bw = b.pct * (vrvpZoneW - 6);
@@ -507,6 +703,8 @@
             ctx.fillText(b.intensityLabel, xRight - 50, Math.min(y1, y2) + bh - 1);
           }
         });
+
+        this.drawMagneticCrosshair(ctx, candles, plotW, topPad, H - botPad);
       }
     },
 
