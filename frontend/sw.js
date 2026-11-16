@@ -1,6 +1,6 @@
 ﻿// TRADING PRO ULTIMATEâ„¢ â€” Service Worker (Master v18.0)
 // Complete anti-cache purge, immediate activation and claims for iOS WebKit & Android Chrome
-const CACHE_NAME = 'v29.7-prec5';
+const CACHE_NAME = 'v29.5-PRO';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
