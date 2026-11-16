@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '29.8-PRO-GRID',
+    version: '29.9-ULTRA-LIGHT',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V298',
+    storageKey: 'QRO_LAYOUT_PARAMS_V299',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -21,6 +21,8 @@
       candleWidthPct: 72,       // 40..92%
       efSplitPct: 55,           // 35..75%
       timeGridSteps: 8,         // 4..16
+      mtfMult: 1,               // 1 | 3 | 5 | 15
+      beepEnabled: false,
       showAvwap: true,
       showPocLine: true,
       showValueArea: true,
@@ -39,12 +41,18 @@
       vpLevels: { poc: 0, vah: 0, val: 0, hvn: [], lvn: [], bins: [] },
       signal: { score: 0, action: 'NEUTRALE', reasons: [], modeAction: '' },
       hoverIdx: -1,
-      lastVis: null
+      lastVis: null,
+      lastHash: '',
+      isScrolling: false,
+      scrollTimer: null,
+      rafPending: false,
+      lastBeepTs: 0,
+      audioCtx: null
     },
 
     loadSavedParams() {
       try {
-        const raw = localStorage.getItem(this.storageKey);
+        const raw = localStorage.getItem(this.storageKey) || localStorage.getItem('QRO_LAYOUT_PARAMS_V298');
         if (raw) Object.assign(this.params, JSON.parse(raw));
       } catch (e) {}
     },
@@ -59,9 +67,15 @@
       this.loadSavedParams();
       this.injectDrawerDOM();
       this.applyEfSplit();
-      this.syncAndRender();
+      const onScroll = () => {
+        this.state.isScrolling = true;
+        if (this.state.scrollTimer) clearTimeout(this.state.scrollTimer);
+        this.state.scrollTimer = setTimeout(() => { this.state.isScrolling = false; }, 180);
+      };
+      window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+      this.checkAndSync(true);
       setInterval(() => {
-        if (this.isVisible) this.syncAndRender();
+        if (this.isVisible && !this.state.isScrolling) this.checkAndSync(false);
       }, 500);
     },
 
@@ -86,15 +100,25 @@
       }
       const drawer = document.createElement('section');
       drawer.id = 'quant-readonly-drawer';
-      drawer.style.cssText = `background:#060a12; border-top:2px solid #00e5ff; padding:12px 14px; font-family:system-ui,monospace; color:#e2e8f0; margin-top:8px; box-sizing:border-box;`;
+      drawer.style.cssText = `background:#060a12; border-top:2px solid #00e5ff; padding:12px 14px; font-family:system-ui,monospace; color:#e2e8f0; margin-top:8px; box-sizing:border-box; contain:layout style paint;`;
       
       drawer.innerHTML = `
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; background:#0b121e; padding:8px 12px; border-radius:6px; border:1px solid rgba(0,229,255,0.25);">
-          <div>
-            <b style="color:#ffab00; font-size:13.5px;">🛡️ SALA OPERATIVA QUANTITATIVA v29.8-PRO-GRID (ZERO-TOUCH)</b>
-            <span id="qro-sync-badge" style="margin-left:8px; font-size:11px; color:#00e676;">● Griglia & Mirino Sincronizzati</span>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+            <b style="color:#ffab00; font-size:13.5px;">⚡ SALA QUANT v29.9-ULTRA-LIGHT (60FPS ZERO-TOUCH)</b>
+            <span id="qro-sync-badge" style="font-size:11px; color:#00e676;">● Scroll Shield & Smart-Diff</span>
+            <span id="qro-alert-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(0,230,118,0.12); border:1px solid rgba(0,230,118,0.4); color:#00e676;">🟢 Flusso Normale</span>
           </div>
-          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            <select id="qro-mtf-select" title="Aggregazione Multi-Timeframe in sola lettura" style="background:#050911; color:#38bdf8; border:1px solid #38bdf8; padding:4px 7px; border-radius:5px; font-weight:700; font-size:11px;">
+              <option value="1" ${this.params.mtfMult == 1 ? 'selected' : ''}>MTF: Sync 1:1</option>
+              <option value="3" ${this.params.mtfMult == 3 ? 'selected' : ''}>MTF: x3 Ciclo</option>
+              <option value="5" ${this.params.mtfMult == 5 ? 'selected' : ''}>MTF: x5 Ciclo</option>
+              <option value="15" ${this.params.mtfMult == 15 ? 'selected' : ''}>MTF: x15 Ciclo</option>
+            </select>
+            <button id="qro-beep-btn" type="button" style="background:${this.params.beepEnabled ? 'rgba(255,171,0,0.22)' : '#1e293b'}; color:${this.params.beepEnabled ? '#ffab00' : '#cbd5e1'}; border:1px solid ${this.params.beepEnabled ? '#ffab00' : '#475569'}; padding:4px 8px; border-radius:5px; cursor:pointer; font-weight:700; font-size:11px;">
+              🔔 Beep POC/VPIN: ${this.params.beepEnabled ? 'ON' : 'OFF'}
+            </button>
             <select id="qro-mode-select" style="background:#050911; color:#00e676; border:1px solid #00e676; padding:4px 8px; border-radius:5px; font-weight:700; font-size:11.5px;">
               <option value="MANUAL">1. Trading Manuale (Livelli POC/HVN/LVN)</option>
               <option value="SEMI" selected>2. Trading Semiautomatico (1-Click CED)</option>
@@ -241,13 +265,32 @@
         this.isVisible = !this.isVisible;
         document.getElementById('qro-body').style.display = this.isVisible ? 'block' : 'none';
       });
+      document.getElementById('qro-mtf-select').addEventListener('change', (e) => {
+        this.params.mtfMult = parseInt(e.target.value, 10) || 1;
+        this.saveParams();
+        this.checkAndSync(true);
+      });
+      document.getElementById('qro-beep-btn').addEventListener('click', () => {
+        this.params.beepEnabled = !this.params.beepEnabled;
+        const btn = document.getElementById('qro-beep-btn');
+        if (btn) {
+          btn.textContent = `🔔 Beep POC/VPIN: ${this.params.beepEnabled ? 'ON' : 'OFF'}`;
+          btn.style.background = this.params.beepEnabled ? 'rgba(255,171,0,0.22)' : '#1e293b';
+          btn.style.color = this.params.beepEnabled ? '#ffab00' : '#cbd5e1';
+          btn.style.borderColor = this.params.beepEnabled ? '#ffab00' : '#475569';
+        }
+        if (this.params.beepEnabled) this.triggerWebAudioBeep(660, 0.08, true);
+        this.saveParams();
+      });
       document.getElementById('qro-mode-select').addEventListener('change', (e) => {
         this.params.tradingMode = e.target.value;
-        this.syncAndRender();
+        this.saveParams();
+        this.checkAndSync(true);
       });
       document.getElementById('qro-sub1-mode').addEventListener('change', (e) => {
         this.params.subChart1Mode = e.target.value;
-        this.syncAndRender();
+        this.saveParams();
+        this.checkAndSync(true);
       });
       document.querySelectorAll('.qro-slider').forEach(sl => {
         sl.addEventListener('input', (e) => {
@@ -258,7 +301,7 @@
           if (lbl) lbl.textContent = e.target.value;
           if (p === 'efSplitPct') this.applyEfSplit();
           this.saveParams();
-          this.syncAndRender();
+          this.checkAndSync(true);
         });
       });
       document.querySelectorAll('.qro-check').forEach(ch => {
@@ -266,7 +309,7 @@
           const p = e.target.getAttribute('data-check');
           this.params[p] = !!e.target.checked;
           this.saveParams();
-          this.syncAndRender();
+          this.checkAndSync(true);
         });
       });
       ['qro-subchart-flows', 'qro-subchart-base'].forEach(id => {
@@ -279,9 +322,19 @@
           const relX = (e.clientX - rect.left) * (cv.width / (rect.width || cv.width));
           const n = this.state.lastVis.candles.length;
           const idx = Math.floor((relX / plotW) * n);
-          this.state.hoverIdx = (idx >= 0 && idx < n) ? idx : -1;
-          this.drawCharts(this.state.lastVis);
-          this.updateCrosshairHUD(this.state.lastVis);
+          const nextIdx = (idx >= 0 && idx < n) ? idx : -1;
+          if (nextIdx === this.state.hoverIdx) return;
+          this.state.hoverIdx = nextIdx;
+          if (!this.state.rafPending) {
+            this.state.rafPending = true;
+            requestAnimationFrame(() => {
+              this.state.rafPending = false;
+              if (this.state.lastVis) {
+                this.drawCharts(this.state.lastVis);
+                this.updateCrosshairHUD(this.state.lastVis);
+              }
+            });
+          }
         });
         cv.addEventListener('mouseleave', () => {
           this.state.hoverIdx = -1;
@@ -357,13 +410,78 @@
       drawEmpty('qro-subchart-base', this.params.subChart2Height, '⏳ Sub-Grafico B (260px): in attesa dati candele + VRVP...');
     },
 
-    syncAndRender() {
-      const hostCandles = this.readHostCandlesReadOnly();
+    aggregateCandlesMTF(raw, mult) {
+      if (!mult || mult <= 1 || raw.length < mult) return raw;
+      const out = [];
+      for (let i = 0; i < raw.length; i += mult) {
+        const chunk = raw.slice(i, i + mult);
+        if (!chunk.length) continue;
+        out.push({
+          time: chunk[0].time,
+          open: chunk[0].open,
+          high: Math.max(...chunk.map(c => c.high)),
+          low: Math.min(...chunk.map(c => c.low)),
+          close: chunk[chunk.length - 1].close,
+          volume: chunk.reduce((a, c) => a + c.volume, 0),
+          askVol: chunk.reduce((a, c) => a + c.askVol, 0),
+          bidVol: chunk.reduce((a, c) => a + c.bidVol, 0)
+        });
+      }
+      return out;
+    },
+
+    triggerWebAudioBeep(freq = 880, dur = 0.11, bypassCooldown = false) {
+      const now = Date.now();
+      if (!bypassCooldown && (!this.params.beepEnabled || (now - this.state.lastBeepTs < 15000))) return;
+      this.state.lastBeepTs = now;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!this.state.audioCtx) this.state.audioCtx = new AC();
+        if (this.state.audioCtx.state === 'suspended') this.state.audioCtx.resume();
+        const osc = this.state.audioCtx.createOscillator();
+        const gain = this.state.audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.08, this.state.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.state.audioCtx.currentTime + dur);
+        osc.connect(gain);
+        gain.connect(this.state.audioCtx.destination);
+        osc.start();
+        osc.stop(this.state.audioCtx.currentTime + dur);
+      } catch (e) {}
+    },
+
+    checkAndSync(force = false) {
+      const rawHost = this.readHostCandlesReadOnly();
+      if (!rawHost.length) {
+        if (!this.state.lastHash) {
+          this.state.lastHash = 'EMPTY';
+          this.drawPlaceholderCanvases();
+        }
+        return;
+      }
+      const mult = parseInt(this.params.mtfMult, 10) || 1;
+      const lastRaw = rawHost[rawHost.length - 1];
+      let lrStr = '';
+      try {
+        const mc = window.mainChart || window.chart || window.tvChart;
+        const lr = mc && mc.timeScale ? mc.timeScale().getVisibleLogicalRange() : null;
+        if (lr) lrStr = `${Math.round(lr.from)}:${Math.round(lr.to)}`;
+      } catch (e) {}
+      const hash = `${rawHost.length}|${lastRaw.time}|${lastRaw.close}|${lastRaw.high}|${lastRaw.low}|${lastRaw.volume}|${lrStr}|${window.chartVisibleBars || 45}|${mult}|${JSON.stringify(this.params)}`;
+      if (!force && hash === this.state.lastHash) return;
+      this.state.lastHash = hash;
+      this.syncAndRender(rawHost);
+    },
+
+    syncAndRender(rawHost) {
+      const hostCandles = rawHost || this.readHostCandlesReadOnly();
       if (!hostCandles.length) {
         this.drawPlaceholderCanvases();
         return;
       }
-      this.state.candles = hostCandles;
+      this.state.candles = this.aggregateCandlesMTF(hostCandles, parseInt(this.params.mtfMult, 10) || 1);
       this.computeMetrics();
       const vis = this.getAlignedVisibleSlice();
       this.state.lastVis = vis;
@@ -372,6 +490,39 @@
       this.drawCharts(vis);
       this.updateHUD();
       this.updateCrosshairHUD(vis);
+      this.evaluateAlertStatus(vis);
+    },
+
+    evaluateAlertStatus(vis) {
+      if (!vis || !vis.candles.length) return;
+      const lastC = vis.candles[vis.candles.length - 1];
+      const lastM = vis.metrics[vis.metrics.length - 1];
+      const poc = this.state.vpLevels.poc || 0;
+      const nearPoc = poc > 0 && Math.abs(lastC.close - poc) / poc < 0.0012;
+      const highVpin = lastM && lastM.vpin >= this.params.vpinToxicThreshold;
+      const pill = document.getElementById('qro-alert-pill');
+      if (highVpin) {
+        if (pill) {
+          pill.textContent = `🔴 VPIN ${(lastM.vpin * 100).toFixed(0)}% TOSSICO`;
+          pill.style.color = '#ff5252';
+          pill.style.borderColor = '#ff5252';
+          pill.style.background = 'rgba(255,82,82,0.14)';
+        }
+        this.triggerWebAudioBeep(920, 0.12);
+      } else if (nearPoc) {
+        if (pill) {
+          pill.textContent = `🟡 Prezzo su POC`;
+          pill.style.color = '#ffd54f';
+          pill.style.borderColor = '#ffd54f';
+          pill.style.background = 'rgba(255,213,79,0.14)';
+        }
+        this.triggerWebAudioBeep(660, 0.10);
+      } else if (pill) {
+        pill.textContent = `🟢 Flusso Normale`;
+        pill.style.color = '#00e676';
+        pill.style.borderColor = 'rgba(0,230,118,0.4)';
+        pill.style.background = 'rgba(0,230,118,0.12)';
+      }
     },
 
     computeMetrics() {
@@ -406,6 +557,7 @@
         const typ = (c.high + c.low + c.close) / 3;
         cumPV += typ * c.volume; cumV += c.volume; cumPV2 += typ * typ * c.volume;
         const avwap = cumPV / (cumV || 1);
+        const stdev = Math.sqrt(Math.max(0, (cumPV2 / (cumV || 1)) - avwap * avwap));
 
         bFill += c.volume; bBuy += c.askVol; bSell += c.bidVol;
         if (bFill >= this.params.vpinBucketSize) {
@@ -419,6 +571,7 @@
 
         this.state.metrics.push({
           time: c.time, delta, cvd, absorption, avwap,
+          avwapUp1: avwap + stdev, avwapDn1: avwap - stdev,
           vpin: Math.min(0.99, Math.max(0.05, vpin)), vsaFriction
         });
       }
@@ -679,17 +832,25 @@
           ctx.fillRect(x - barW / 2, yOf(Math.max(c.open, c.close)), barW, Math.max(2, yOf(Math.min(c.open, c.close)) - yOf(Math.max(c.open, c.close))));
         });
 
-        // Curva VWAP Ancorato (#38bdf8)
+        // Curva VWAP Ancorato (#38bdf8) + Bande ±1σ
         if (this.params.showAvwap) {
-          ctx.strokeStyle = '#38bdf8';
-          ctx.lineWidth = 1.8;
-          ctx.beginPath();
-          metrics.forEach((m, i) => {
-            const x = (i + 0.5) * stepX;
-            const y = yOf(m.avwap);
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          });
-          ctx.stroke();
+          const drawBand = (getter, col, w, dash) => {
+            ctx.save();
+            ctx.strokeStyle = col;
+            ctx.lineWidth = w;
+            ctx.setLineDash(dash);
+            ctx.beginPath();
+            metrics.forEach((m, i) => {
+              const x = (i + 0.5) * stepX;
+              const y = yOf(getter(m));
+              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            ctx.restore();
+          };
+          drawBand(m => m.avwapUp1, 'rgba(56, 189, 248, 0.35)', 1, [3, 3]);
+          drawBand(m => m.avwapDn1, 'rgba(56, 189, 248, 0.35)', 1, [3, 3]);
+          drawBand(m => m.avwap, '#38bdf8', 1.8, []);
         }
 
         (this.state.vpLevels.bins || []).forEach(b => {
