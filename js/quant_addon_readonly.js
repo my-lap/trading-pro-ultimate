@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '30.7-CLEAN-14ROWS',
+    version: '30.8-ZERO-LAG',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V307',
+    storageKey: 'QRO_LAYOUT_PARAMS_V308',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -73,63 +73,14 @@
       this.injectDrawerDOM();
       this.applyEfSplit();
       this.applyResponsiveColumns();
-      this.fixHostOverlapsOnce();
-      this.upgradeTablesBidiScrollOnce();
-      this.bindScrollAndUIYieldShield();
-      this.bindInstantSymbolSwitchDetector();
       this.bindViewportObserver();
       this.bindGlobalCrosshair();
       this.checkAndSync(true);
       setInterval(() => {
-        if (!this.isVisible || !this.state.isInViewport || this.state.isScrolling) return;
-        if (Date.now() < this.state.uiYieldUntil) return;
+        if (!this.isVisible || !this.state.isInViewport) return;
         this.bindGlobalCrosshair();
         this.checkAndSync(false);
-      }, 500);
-    },
-
-    bindScrollAndUIYieldShield() {
-      const onScroll = () => {
-        this.state.isScrolling = true;
-        if (this.state.scrollTimer) clearTimeout(this.state.scrollTimer);
-        this.state.scrollTimer = setTimeout(() => { this.state.isScrolling = false; }, 180);
-      };
-      window.addEventListener('scroll', onScroll, { passive: true, capture: true });
-
-      let rotTimer = null;
-      const onViewportChange = () => {
-        if (rotTimer) clearTimeout(rotTimer);
-        rotTimer = setTimeout(() => {
-          this.applyResponsiveColumns();
-          if (this.isVisible && this.state.isInViewport) this.checkAndSync(true);
-        }, 90);
-      };
-      window.addEventListener('resize', onViewportChange, { passive: true });
-      window.addEventListener('orientationchange', onViewportChange, { passive: true });
-
-      const yieldUI = (e) => {
-        const t = e.target;
-        if (!t || !t.tagName) return;
-        const tag = t.tagName.toUpperCase();
-        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'BUTTON' || t.closest('button, select, input, [role="search"]')) {
-          if (!t.classList.contains('qro-slider')) {
-            this.state.uiYieldUntil = Date.now() + 420;
-          }
-        }
-      };
-      document.addEventListener('pointerdown', yieldUI, { passive: true, capture: true });
-      document.addEventListener('focusin', yieldUI, { passive: true, capture: true });
-    },
-
-    bindInstantSymbolSwitchDetector() {
-      document.addEventListener('click', (e) => {
-        const el = e.target && e.target.closest ? e.target.closest('[data-symbol], .asset-row, .symbol-item, .radar-card, .tf-pill') : null;
-        if (el) {
-          requestAnimationFrame(() => {
-            if (this.isVisible && this.state.isInViewport) this.checkAndSync(true);
-          });
-        }
-      }, { passive: true, capture: true });
+      }, 650);
     },
 
     bindViewportObserver() {
@@ -147,56 +98,8 @@
       io.observe(drawer);
     },
 
-    fixHostOverlapsOnce() {
-      const dock = document.getElementById('v27-orderblock-scanner-dock');
-      const wrap = document.getElementById('v27-scanner-body-wrap');
-      const macro = document.getElementById('bybit-macro-timeline-ribbon');
-      if (wrap) {
-        wrap.classList.add('qro-raggix-full14-box');
-        wrap.style.height = 'auto';
-        wrap.style.maxHeight = 'none';
-        wrap.style.overflowY = 'visible';
-        wrap.style.overflowX = 'auto';
-        wrap.style.position = 'relative';
-        wrap.style.zIndex = '1';
-      }
-      if (dock) {
-        dock.style.height = 'auto';
-        dock.style.maxHeight = 'none';
-        dock.style.overflow = 'visible';
-        dock.style.position = 'relative';
-        dock.style.zIndex = '2';
-      }
-      if (macro) {
-        macro.classList.add('qro-macrowire-singleline-bar');
-        macro.style.position = 'relative';
-        macro.style.zIndex = '5';
-        macro.style.background = '#060b14';
-        macro.style.borderTop = '1px solid #1e293b';
-        macro.style.clear = 'both';
-        macro.style.marginTop = '2px';
-        macro.style.flexWrap = 'nowrap';
-        macro.style.whiteSpace = 'nowrap';
-        macro.style.height = '34px';
-        macro.style.overflowX = 'auto';
-        macro.style.overflowY = 'hidden';
-      }
-    },
-
-    upgradeTablesBidiScrollOnce() {
-      const targets = [
-        document.getElementById('v27-scanner-body-wrap'),
-        document.getElementById('ced-electronic-field-wrap'),
-        document.getElementById('bybit-orderbook-card')
-      ].filter(Boolean);
-      targets.forEach(box => {
-        if (!box) return;
-        box.classList.add('qro-raggix-full14-box');
-        if (box.parentElement && getComputedStyle(box.parentElement).overflowX === 'hidden') {
-          box.parentElement.style.overflowX = 'auto';
-        }
-      });
-    },
+    fixHostOverlapsOnce() {},
+    upgradeTablesBidiScrollOnce() {},
 
     applyResponsiveColumns() {
       const grid = document.getElementById('qro-kpi-grid');
@@ -505,104 +408,64 @@
         this.saveParams();
         this.checkAndSync(true);
       });
-      document.querySelectorAll('.qro-slider').forEach(sl => {
-        sl.addEventListener('input', (e) => {
-          const p = e.target.getAttribute('data-param');
-          const v = parseFloat(e.target.value);
-          this.params[p] = v;
-          const lbl = document.getElementById(`qro-lbl-${p}`);
-          if (lbl) lbl.textContent = e.target.value;
-          if (p === 'efSplitPct') this.applyEfSplit();
-          this.saveParams();
-          this.checkAndSync(true);
-        });
+      drawer.addEventListener('input', (e) => {
+        const sl = e.target;
+        if (!sl || !sl.classList || !sl.classList.contains('qro-slider')) return;
+        const p = sl.getAttribute('data-param');
+        this.params[p] = parseFloat(sl.value);
+        const lbl = document.getElementById(`qro-lbl-${p}`);
+        if (lbl) lbl.textContent = sl.value;
+        if (p === 'efSplitPct') this.applyEfSplit();
+        this.saveParams();
+        this.checkAndSync(true);
       });
-      document.querySelectorAll('.qro-check').forEach(ch => {
-        ch.addEventListener('change', (e) => {
-          const p = e.target.getAttribute('data-check');
-          this.params[p] = !!e.target.checked;
-          this.saveParams();
-          this.checkAndSync(true);
-        });
+      drawer.addEventListener('change', (e) => {
+        const ch = e.target;
+        if (!ch || !ch.classList || !ch.classList.contains('qro-check')) return;
+        const p = ch.getAttribute('data-check');
+        this.params[p] = !!ch.checked;
+        this.saveParams();
+        this.checkAndSync(true);
       });
-      ['qro-subchart-flows', 'qro-subchart-base'].forEach(id => {
-        const cv = document.getElementById(id);
-        if (!cv) return;
-        cv.addEventListener('mousemove', (e) => {
-          if (!this.state.lastVis || !this.state.lastVis.candles.length) return;
-          const rect = cv.getBoundingClientRect();
-          const cssW = cv.clientWidth || rect.width || 960;
-          const dims = this.getEffectiveDimensions(cssW);
-          const relX = e.clientX - rect.left;
-          const n = this.state.lastVis.candles.length;
-          const idx = Math.floor((relX / dims.plotW) * n);
-          const nextIdx = (idx >= 0 && idx < n) ? idx : -1;
-          if (nextIdx === this.state.hoverIdx) return;
-          this.state.hoverIdx = nextIdx;
-          if (!this.state.rafPending) {
-            this.state.rafPending = true;
-            requestAnimationFrame(() => {
-              this.state.rafPending = false;
-              if (this.state.lastVis) {
-                this.drawCharts(this.state.lastVis);
-                this.updateCrosshairHUD(this.state.lastVis);
-              }
-            });
-          }
-        });
-        cv.addEventListener('mouseleave', () => {
-          this.state.hoverIdx = -1;
-          if (this.state.lastVis) this.drawCharts(this.state.lastVis);
-        });
-      });
-      document.querySelectorAll('.qro-h-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const target = btn.getAttribute('data-target');
-          const val = btn.getAttribute('data-val');
-          const delta = btn.getAttribute('data-delta');
-          const minH = target === 'subChart1Height' ? 70 : 120;
-          const maxH = target === 'subChart1Height' ? 420 : 540;
-          const cur = parseInt(this.params[target], 10) || 180;
-          const next = val !== null ? parseInt(val, 10) : Math.max(minH, Math.min(maxH, cur + parseInt(delta, 10)));
-          this.params[target] = next;
-          const lbl = document.getElementById(`qro-lbl-${target}`);
-          if (lbl) lbl.textContent = next;
-          this.saveParams();
-          this.checkAndSync(true);
-        });
+      drawer.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest('.qro-h-btn') : null;
+        if (!btn) return;
+        const target = btn.getAttribute('data-target');
+        const val = btn.getAttribute('data-val');
+        const delta = btn.getAttribute('data-delta');
+        const minH = target === 'subChart1Height' ? 70 : 120;
+        const maxH = target === 'subChart1Height' ? 420 : 540;
+        const cur = parseInt(this.params[target], 10) || 180;
+        const next = val !== null ? parseInt(val, 10) : Math.max(minH, Math.min(maxH, cur + parseInt(delta, 10)));
+        this.params[target] = next;
+        const lbl = document.getElementById(`qro-lbl-${target}`);
+        if (lbl) lbl.textContent = next;
+        this.saveParams();
+        this.checkAndSync(true);
       });
 
       const splitter = document.getElementById('qro-center-splitter');
       if (splitter) {
         let dragY = null, startH1 = 180, startH2 = 260;
-        const onMove = (clientY) => {
-          if (dragY === null) return;
-          const dy = clientY - dragY;
-          this.params.subChart1Height = Math.max(70, Math.min(420, startH1 + dy));
-          this.params.subChart2Height = Math.max(120, Math.min(540, startH2 - dy));
-          this.checkAndSync(true);
-        };
-        splitter.addEventListener('mousedown', (e) => {
+        splitter.addEventListener('pointerdown', (e) => {
           dragY = e.clientY;
           startH1 = parseInt(this.params.subChart1Height, 10) || 180;
           startH2 = parseInt(this.params.subChart2Height, 10) || 260;
+          try { splitter.setPointerCapture(e.pointerId); } catch (err) {}
         });
-        window.addEventListener('mousemove', (e) => { if (dragY !== null) onMove(e.clientY); });
-        window.addEventListener('mouseup', () => {
-          if (dragY !== null) { dragY = null; this.saveParams(); }
+        splitter.addEventListener('pointermove', (e) => {
+          if (dragY === null) return;
+          const dy = e.clientY - dragY;
+          this.params.subChart1Height = Math.max(70, Math.min(420, startH1 + dy));
+          this.params.subChart2Height = Math.max(120, Math.min(540, startH2 - dy));
+          this.checkAndSync(true);
         });
-        splitter.addEventListener('touchstart', (e) => {
-          if (e.touches && e.touches[0]) {
-            dragY = e.touches[0].clientY;
-            startH1 = parseInt(this.params.subChart1Height, 10) || 180;
-            startH2 = parseInt(this.params.subChart2Height, 10) || 260;
+        splitter.addEventListener('pointerup', (e) => {
+          if (dragY !== null) {
+            dragY = null;
+            this.saveParams();
+            try { splitter.releasePointerCapture(e.pointerId); } catch (err) {}
           }
-        }, { passive: true });
-        splitter.addEventListener('touchmove', (e) => {
-          if (dragY !== null && e.touches && e.touches[0]) { e.preventDefault(); onMove(e.touches[0].clientY); }
-        }, { passive: false });
-        splitter.addEventListener('touchend', () => {
-          if (dragY !== null) { dragY = null; this.saveParams(); }
         });
       }
 
@@ -657,7 +520,7 @@
       const drawEmpty = (id, h, title) => {
         const cv = document.getElementById(id);
         if (!cv) return;
-        const ctx = cv.getContext('2d');
+        const ctx = cv.getContext('2d', { alpha: false });
         const W = cv.width = cv.clientWidth || 960;
         const H = cv.height = h;
         ctx.fillStyle = '#060a10';
@@ -777,7 +640,7 @@
         cv.width = targetW;
         cv.height = targetH;
       }
-      const ctx = cv.getContext('2d');
+      const ctx = cv.getContext('2d', { alpha: false });
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       return { ctx, W: cssW, H: cssH };
     },
