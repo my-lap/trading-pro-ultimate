@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '30.2-PROFIT-GUARD',
+    version: '30.3-RESPONSIVE-OMNI',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V302',
+    storageKey: 'QRO_LAYOUT_PARAMS_V303',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -75,12 +75,39 @@
         this.state.scrollTimer = setTimeout(() => { this.state.isScrolling = false; }, 180);
       };
       window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+      let rotTimer = null;
+      const onViewportChange = () => {
+        if (rotTimer) clearTimeout(rotTimer);
+        rotTimer = setTimeout(() => {
+          this.applyResponsiveColumns();
+          if (this.isVisible) this.checkAndSync(true);
+        }, 90);
+      };
+      window.addEventListener('resize', onViewportChange, { passive: true });
+      window.addEventListener('orientationchange', onViewportChange, { passive: true });
+      this.applyResponsiveColumns();
       this.bindGlobalCrosshair();
       this.checkAndSync(true);
       setInterval(() => {
         this.bindGlobalCrosshair();
         if (this.isVisible && !this.state.isScrolling) this.checkAndSync(false);
       }, 500);
+    },
+
+    applyResponsiveColumns() {
+      const grid = document.getElementById('qro-kpi-grid');
+      if (!grid) return;
+      const w = window.innerWidth || 1024;
+      if (w < 560) {
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+      } else if (w < 960) {
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+      } else {
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(145px, 1fr))';
+      }
     },
 
     bindGlobalCrosshair() {
@@ -122,7 +149,13 @@
         const st = document.createElement('style');
         st.id = 'qro-v298-resizable-css';
         st.textContent = `
-          #qro-kpi-grid > div { resize: horizontal; overflow: auto; min-width: 125px; }
+          #quant-readonly-drawer {
+            padding-top: max(12px, env(safe-area-inset-top, 0px)) !important;
+            padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+            padding-left: max(12px, env(safe-area-inset-left, 0px)) !important;
+            padding-right: max(12px, env(safe-area-inset-right, 0px)) !important;
+          }
+          #qro-kpi-grid > div { resize: horizontal; overflow: auto; min-width: 110px; }
           #v27-orderblock-scanner-dock th, #bybit-orderbook-card th, .ef-live-table th {
             resize: horizontal; overflow: hidden; min-width: 58px;
           }
@@ -374,10 +407,11 @@
         cv.addEventListener('mousemove', (e) => {
           if (!this.state.lastVis || !this.state.lastVis.candles.length) return;
           const rect = cv.getBoundingClientRect();
-          const plotW = Math.max(40, (cv.width - this.params.rightAxisW) - this.params.vrvpZoneW);
-          const relX = (e.clientX - rect.left) * (cv.width / (rect.width || cv.width));
+          const cssW = cv.clientWidth || rect.width || 960;
+          const dims = this.getEffectiveDimensions(cssW);
+          const relX = e.clientX - rect.left;
           const n = this.state.lastVis.candles.length;
-          const idx = Math.floor((relX / plotW) * n);
+          const idx = Math.floor((relX / dims.plotW) * n);
           const nextIdx = (idx >= 0 && idx < n) ? idx : -1;
           if (nextIdx === this.state.hoverIdx) return;
           this.state.hoverIdx = nextIdx;
@@ -582,13 +616,52 @@
       this.syncAndRender(rawHost);
     },
 
+    normalizeCandlesWithCleanTimeline(candles) {
+      if (!candles || candles.length < 2) return candles;
+      let stepMs = Math.abs(candles[1].time - candles[0].time);
+      if (!stepMs || stepMs < 1000) stepMs = 60000;
+      for (let i = 1; i < candles.length; i++) {
+        if (!candles[i].time || candles[i].time <= candles[i - 1].time) {
+          candles[i].time = candles[i - 1].time + stepMs;
+        }
+      }
+      return candles;
+    },
+
+    getEffectiveDimensions(cssW) {
+      const w = Math.max(260, cssW || 960);
+      const isMobile = w < 560;
+      const rawRight = parseInt(this.params.rightAxisW, 10) || 68;
+      const rawVrvp = parseInt(this.params.vrvpZoneW, 10) || 115;
+      const rightAxisW = isMobile ? Math.min(48, rawRight) : Math.min(rawRight, Math.round(w * 0.14));
+      const vrvpZoneW = isMobile ? Math.min(54, Math.round(w * 0.14)) : Math.min(rawVrvp, Math.round(w * 0.22));
+      const chartW = w - rightAxisW;
+      const plotW = Math.max(Math.round(w * 0.72), chartW - vrvpZoneW);
+      return { rightAxisW, vrvpZoneW: Math.max(36, chartW - plotW), chartW, plotW };
+    },
+
+    setupHiDPICanvas(cv, cssH) {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const cssW = cv.clientWidth || (cv.parentElement ? cv.parentElement.clientWidth - 16 : 960) || 960;
+      const targetW = Math.round(cssW * dpr);
+      const targetH = Math.round(cssH * dpr);
+      if (cv.width !== targetW || cv.height !== targetH) {
+        cv.width = targetW;
+        cv.height = targetH;
+      }
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, W: cssW, H: cssH };
+    },
+
     syncAndRender(rawHost) {
       const hostCandles = rawHost || this.readHostCandlesReadOnly();
       if (!hostCandles.length) {
         this.drawPlaceholderCanvases();
         return;
       }
-      this.state.candles = this.aggregateCandlesMTF(hostCandles, parseInt(this.params.mtfMult, 10) || 1);
+      const agg = this.aggregateCandlesMTF(hostCandles, parseInt(this.params.mtfMult, 10) || 1);
+      this.state.candles = this.normalizeCandlesWithCleanTimeline(agg);
       this.computeMetrics();
       const vis = this.getAlignedVisibleSlice();
       this.state.lastVis = vis;
@@ -900,10 +973,12 @@
     drawTimeGrid(ctx, candles, plotW, topPad, botY, H, steps) {
       const n = candles.length;
       if (!n) return;
+      const minLabelSpacingPx = plotW < 420 ? 64 : 52;
       const spanMs = Math.abs(candles[n - 1].time - candles[0].time);
       const useSubMin = spanMs < 20 * 60 * 1000;
       let drawn = 0;
-      let lastLabelX = -100;
+      let lastLabelX = -120;
+      let lastLabelText = '';
       for (let i = 1; i < n; i++) {
         const dPrev = new Date(candles[i - 1].time);
         const dCur = new Date(candles[i].time);
@@ -921,11 +996,13 @@
           ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.035)';
           ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, botY); ctx.stroke();
-          if (x - lastLabelX >= 44) {
+          const lbl = this.formatTime(candles[i].time, useSubMin && isMinor);
+          if (x - lastLabelX >= minLabelSpacingPx && lbl !== lastLabelText && x < plotW - 24) {
             ctx.fillStyle = isMajor ? '#cbd5e1' : '#64748b';
             ctx.font = isMajor ? 'bold 10px monospace' : '9.5px monospace';
-            ctx.fillText(this.formatTime(candles[i].time, useSubMin && isMinor), Math.max(2, x - 14), H - 5);
+            ctx.fillText(lbl, Math.max(2, x - 14), H - 5);
             lastLabelX = x;
+            lastLabelText = lbl;
           }
           drawn++;
         }
@@ -936,9 +1013,14 @@
           const x = (i + 0.5) * (plotW / n);
           ctx.strokeStyle = 'rgba(255,255,255,0.06)';
           ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, botY); ctx.stroke();
-          ctx.fillStyle = '#94a3b8';
-          ctx.font = '10px monospace';
-          ctx.fillText(this.formatTime(candles[i].time), Math.max(2, x - 14), H - 5);
+          const lbl = this.formatTime(candles[i].time);
+          if (x - lastLabelX >= minLabelSpacingPx && lbl !== lastLabelText && x < plotW - 24) {
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '10px monospace';
+            ctx.fillText(lbl, Math.max(2, x - 14), H - 5);
+            lastLabelX = x;
+            lastLabelText = lbl;
+          }
         }
       }
     },
@@ -977,13 +1059,13 @@
 
       const cv1 = document.getElementById('qro-subchart-flows');
       if (cv1) {
-        cv1.style.minHeight = `${this.params.subChart1Height}px`;
-        const ctx = cv1.getContext('2d');
-        const W = cv1.width = cv1.clientWidth || 960;
-        const H = cv1.height = parseInt(this.params.subChart1Height, 10) || 180;
+        const cssH1 = parseInt(this.params.subChart1Height, 10) || 180;
+        cv1.style.minHeight = `${cssH1}px`;
+        const { ctx, W, H } = this.setupHiDPICanvas(cv1, cssH1);
         ctx.fillStyle = '#060a10'; ctx.fillRect(0, 0, W, H);
 
-        const chartW = W - rightAxisW, plotW = Math.max(60, chartW - vrvpZoneW);
+        const dims = this.getEffectiveDimensions(W);
+        const rightAxisW = dims.rightAxisW, vrvpZoneW = dims.vrvpZoneW, chartW = dims.chartW, plotW = dims.plotW;
         const stepX = plotW / candles.length, topPad = 14, botPad = 20, plotH = H - topPad - botPad;
         const barW = Math.max(2, Math.min(34, stepX * candleRatio));
         this.drawTimeGrid(ctx, candles, plotW, topPad, H - botPad, H, gridSteps);
@@ -1041,10 +1123,9 @@
 
       const cv2 = document.getElementById('qro-subchart-base');
       if (cv2) {
-        cv2.style.minHeight = `${this.params.subChart2Height}px`;
-        const ctx = cv2.getContext('2d');
-        const W = cv2.width = cv2.clientWidth || 960;
-        const H = cv2.height = parseInt(this.params.subChart2Height, 10) || 260;
+        const cssH2 = parseInt(this.params.subChart2Height, 10) || 260;
+        cv2.style.minHeight = `${cssH2}px`;
+        const { ctx, W, H } = this.setupHiDPICanvas(cv2, cssH2);
         ctx.fillStyle = '#05080e'; ctx.fillRect(0, 0, W, H);
 
         const minLow = Math.min(...candles.map(c => c.low));
@@ -1052,7 +1133,8 @@
         const padP = Math.max(1e-6, (maxHigh - minLow) * 0.12);
         const minP = minLow - padP, maxP = maxHigh + padP;
 
-        const chartW = W - rightAxisW, plotW = Math.max(60, chartW - vrvpZoneW);
+        const dims = this.getEffectiveDimensions(W);
+        const rightAxisW = dims.rightAxisW, vrvpZoneW = dims.vrvpZoneW, chartW = dims.chartW, plotW = dims.plotW;
         const stepX = plotW / candles.length, topPad = 14, botPad = 22, plotH = H - topPad - botPad;
         const yOf = (p) => topPad + ((maxP - p) / (maxP - minP || 1e-8)) * plotH;
 
