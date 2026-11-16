@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '30.3-RESPONSIVE-OMNI',
+    version: '30.4-ZERO-OVERLAP',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V303',
+    storageKey: 'QRO_LAYOUT_PARAMS_V304',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -86,12 +86,39 @@
       window.addEventListener('resize', onViewportChange, { passive: true });
       window.addEventListener('orientationchange', onViewportChange, { passive: true });
       this.applyResponsiveColumns();
+      this.fixHostOverlapsReadOnly();
       this.bindGlobalCrosshair();
       this.checkAndSync(true);
       setInterval(() => {
+        this.fixHostOverlapsReadOnly();
         this.bindGlobalCrosshair();
         if (this.isVisible && !this.state.isScrolling) this.checkAndSync(false);
       }, 500);
+    },
+
+    fixHostOverlapsReadOnly() {
+      const dock = document.getElementById('v27-orderblock-scanner-dock');
+      const wrap = document.getElementById('v27-scanner-body-wrap');
+      const macro = document.getElementById('bybit-macro-timeline-ribbon');
+      if (wrap) {
+        wrap.style.overflowY = 'auto';
+        wrap.style.overflowX = 'auto';
+        wrap.style.position = 'relative';
+        wrap.style.zIndex = '1';
+      }
+      if (dock) {
+        dock.style.overflow = 'hidden';
+        dock.style.position = 'relative';
+        dock.style.zIndex = '2';
+      }
+      if (macro) {
+        macro.style.position = 'relative';
+        macro.style.zIndex = '5';
+        macro.style.background = '#060b14';
+        macro.style.borderTop = '1px solid #1e293b';
+        macro.style.clear = 'both';
+        macro.style.marginTop = '2px';
+      }
     },
 
     applyResponsiveColumns() {
@@ -1034,6 +1061,26 @@
       ctx.fillText(text, x + 4, py + 3);
     },
 
+    resolveVerticalCollisions(items, minGap = 15, minY = 10, maxY = 400) {
+      if (!items || !items.length) return [];
+      const sorted = items.map((it, idx) => ({ ...it, _origIdx: idx, yAdj: Math.max(minY, Math.min(maxY, it.y)) }))
+        .sort((a, b) => a.yAdj - b.yAdj);
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].yAdj - sorted[i - 1].yAdj < minGap) {
+          sorted[i].yAdj = sorted[i - 1].yAdj + minGap;
+        }
+      }
+      if (sorted[sorted.length - 1].yAdj > maxY) {
+        sorted[sorted.length - 1].yAdj = maxY;
+        for (let i = sorted.length - 2; i >= 0; i--) {
+          if (sorted[i + 1].yAdj - sorted[i].yAdj < minGap) {
+            sorted[i].yAdj = sorted[i + 1].yAdj - minGap;
+          }
+        }
+      }
+      return sorted;
+    },
+
     drawMagneticCrosshair(ctx, candles, plotW, topPad, botY) {
       const idx = this.state.hoverIdx;
       if (idx < 0 || idx >= candles.length) return;
@@ -1225,52 +1272,61 @@
           drawBand(m => m.avwap, '#38bdf8', 1.8, []);
         }
 
-        // Scaglioni Free-Ride (TP1 40% -> BE +0.15%, TP2 40%, TP3 20% Runner, SL)
+        // Scaglioni Free-Ride (TP1 40% -> BE +0.15%, TP2 40%, TP3 20% Runner, SL) con Anti-Collisione 15px
         if (this.params.showFreeRideLevels && this.state.freeRide) {
           const fr = this.state.freeRide;
-          const drawFR = (price, lbl, col) => {
-            const y = yOf(price);
-            if (y < topPad || y > H - botPad) return;
+          const rawFR = [
+            { price: fr.tp3, lbl: 'TP3 20% Run', col: '#00e5ff' },
+            { price: fr.tp2, lbl: 'TP2 40%', col: '#00e676' },
+            { price: fr.tp1, lbl: 'TP1 40%→🛡️BE', col: '#a7f3d0' },
+            { price: fr.sl, lbl: 'SL Iniz.', col: '#ff5252' }
+          ].map(it => ({ ...it, y: yOf(it.price) })).filter(it => it.y >= topPad && it.y <= H - botPad);
+          const resolvedFR = this.resolveVerticalCollisions(rawFR, 15, topPad + 8, H - botPad - 6);
+          resolvedFR.forEach(it => {
             ctx.save();
-            ctx.strokeStyle = col;
+            ctx.strokeStyle = it.col;
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
-            ctx.fillStyle = 'rgba(6, 10, 18, 0.85)';
-            ctx.fillRect(6, y - 11, 136, 13);
-            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.moveTo(0, it.y); ctx.lineTo(chartW, it.y); ctx.stroke();
+            ctx.fillStyle = 'rgba(6, 10, 18, 0.88)';
+            ctx.fillRect(6, it.yAdj - 11, 140, 13);
+            ctx.fillStyle = it.col;
             ctx.font = 'bold 9.5px monospace';
-            ctx.fillText(`${lbl} ${price.toFixed(dec)}`, 9, y - 1);
+            ctx.fillText(`${it.lbl} ${it.price.toFixed(dec)}`, 9, it.yAdj - 1);
             ctx.restore();
-          };
-          drawFR(fr.tp3, 'TP3 20% Run', '#00e5ff');
-          drawFR(fr.tp2, 'TP2 40%', '#00e676');
-          drawFR(fr.tp1, 'TP1 40%→🛡️BE', '#a7f3d0');
-          drawFR(fr.sl, 'SL Iniz.', '#ff5252');
+          });
         }
 
-        // Pillole Prezzo Live Colorate sull'Asse Destro (Prezzo, POC, VWAP)
+        // Pillole Prezzo Live Colorate sull'Asse Destro (Prezzo, POC, VWAP) con Anti-Collisione 15px
         const lastC = candles[candles.length - 1];
         const lastM = metrics[metrics.length - 1];
+        const rawPills = [];
         if (this.params.showAvwap && lastM) {
-          this.drawAxisPill(ctx, chartW + 2, yOf(lastM.avwap), rightAxisW, lastM.avwap.toFixed(dec), '#38bdf8');
+          rawPills.push({ y: yOf(lastM.avwap), text: lastM.avwap.toFixed(dec), bg: '#38bdf8' });
         }
         if (this.params.showPocLine && this.state.vpLevels.poc) {
-          this.drawAxisPill(ctx, chartW + 2, yOf(this.state.vpLevels.poc), rightAxisW, this.state.vpLevels.poc.toFixed(dec), '#ffd54f');
+          rawPills.push({ y: yOf(this.state.vpLevels.poc), text: this.state.vpLevels.poc.toFixed(dec), bg: '#ffd54f' });
         }
         if (lastC) {
-          this.drawAxisPill(ctx, chartW + 2, yOf(lastC.close), rightAxisW, lastC.close.toFixed(dec), lastC.close >= lastC.open ? '#00e676' : '#ff5252');
+          rawPills.push({ y: yOf(lastC.close), text: lastC.close.toFixed(dec), bg: lastC.close >= lastC.open ? '#00e676' : '#ff5252' });
         }
+        this.resolveVerticalCollisions(rawPills, 15, topPad + 8, H - botPad - 8).forEach(p => {
+          this.drawAxisPill(ctx, chartW + 2, p.yAdj, rightAxisW, p.text, p.bg);
+        });
 
+        let lastVrvpTextY = -999;
         (this.state.vpLevels.bins || []).forEach(b => {
           const y1 = yOf(b.priceHigh), y2 = yOf(b.priceLow);
           const bh = Math.max(2, Math.abs(y2 - y1) - 1), bw = b.pct * (vrvpZoneW - 6);
           const xRight = chartW - 2;
+          const yTop = Math.min(y1, y2);
           ctx.fillStyle = b.type === 'POC' ? 'rgba(255,213,79,0.88)' : (b.type === 'HVN' ? 'rgba(0,229,255,0.55)' : (b.type === 'LVN' ? 'rgba(255,64,129,0.50)' : 'rgba(148,163,184,0.28)'));
-          ctx.fillRect(xRight - bw, Math.min(y1, y2), bw, bh);
-          if (bh >= 7) {
+          ctx.fillRect(xRight - bw, yTop, bw, bh);
+          const yTxt = yTop + bh - 1;
+          if (bh >= 7 && Math.abs(yTxt - lastVrvpTextY) >= 15) {
             ctx.fillStyle = '#e2e8f0'; ctx.font = '8.5px monospace';
-            ctx.fillText(b.intensityLabel, xRight - 50, Math.min(y1, y2) + bh - 1);
+            ctx.fillText(b.intensityLabel, xRight - 50, yTxt);
+            lastVrvpTextY = yTxt;
           }
         });
 
