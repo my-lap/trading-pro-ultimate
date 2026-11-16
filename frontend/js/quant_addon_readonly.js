@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '30.4-ZERO-OVERLAP',
+    version: '30.5-HYPER-FLUID',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V304',
+    storageKey: 'QRO_LAYOUT_PARAMS_V305',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -49,7 +49,10 @@
       scrollTimer: null,
       rafPending: false,
       lastBeepTs: 0,
-      audioCtx: null
+      audioCtx: null,
+      uiYieldUntil: 0,
+      isInViewport: true,
+      lastSymbol: ''
     },
 
     loadSavedParams() {
@@ -69,34 +72,81 @@
       this.loadSavedParams();
       this.injectDrawerDOM();
       this.applyEfSplit();
+      this.applyResponsiveColumns();
+      this.fixHostOverlapsOnce();
+      this.bindScrollAndUIYieldShield();
+      this.bindInstantSymbolSwitchDetector();
+      this.bindViewportObserver();
+      this.bindGlobalCrosshair();
+      this.checkAndSync(true);
+      setInterval(() => {
+        if (!this.isVisible || !this.state.isInViewport || this.state.isScrolling) return;
+        if (Date.now() < this.state.uiYieldUntil) return;
+        this.bindGlobalCrosshair();
+        this.checkAndSync(false);
+      }, 500);
+    },
+
+    bindScrollAndUIYieldShield() {
       const onScroll = () => {
         this.state.isScrolling = true;
         if (this.state.scrollTimer) clearTimeout(this.state.scrollTimer);
         this.state.scrollTimer = setTimeout(() => { this.state.isScrolling = false; }, 180);
       };
       window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+
       let rotTimer = null;
       const onViewportChange = () => {
         if (rotTimer) clearTimeout(rotTimer);
         rotTimer = setTimeout(() => {
           this.applyResponsiveColumns();
-          if (this.isVisible) this.checkAndSync(true);
+          if (this.isVisible && this.state.isInViewport) this.checkAndSync(true);
         }, 90);
       };
       window.addEventListener('resize', onViewportChange, { passive: true });
       window.addEventListener('orientationchange', onViewportChange, { passive: true });
-      this.applyResponsiveColumns();
-      this.fixHostOverlapsReadOnly();
-      this.bindGlobalCrosshair();
-      this.checkAndSync(true);
-      setInterval(() => {
-        this.fixHostOverlapsReadOnly();
-        this.bindGlobalCrosshair();
-        if (this.isVisible && !this.state.isScrolling) this.checkAndSync(false);
-      }, 500);
+
+      const yieldUI = (e) => {
+        const t = e.target;
+        if (!t || !t.tagName) return;
+        const tag = t.tagName.toUpperCase();
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'BUTTON' || t.closest('button, select, input, [role="search"]')) {
+          if (!t.classList.contains('qro-slider')) {
+            this.state.uiYieldUntil = Date.now() + 420;
+          }
+        }
+      };
+      document.addEventListener('pointerdown', yieldUI, { passive: true, capture: true });
+      document.addEventListener('focusin', yieldUI, { passive: true, capture: true });
     },
 
-    fixHostOverlapsReadOnly() {
+    bindInstantSymbolSwitchDetector() {
+      document.addEventListener('click', (e) => {
+        const el = e.target && e.target.closest ? e.target.closest('[data-symbol], .asset-row, .symbol-item, .radar-card, .tf-pill') : null;
+        if (el) {
+          requestAnimationFrame(() => {
+            if (this.isVisible && this.state.isInViewport) this.checkAndSync(true);
+          });
+        }
+      }, { passive: true, capture: true });
+    },
+
+    bindViewportObserver() {
+      const drawer = document.getElementById('quant-readonly-drawer');
+      if (!drawer || typeof IntersectionObserver === 'undefined') return;
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          const wasIn = this.state.isInViewport;
+          this.state.isInViewport = entry.isIntersecting;
+          if (!wasIn && entry.isIntersecting && this.isVisible) {
+            requestAnimationFrame(() => this.checkAndSync(true));
+          }
+        });
+      }, { rootMargin: '120px 0px', threshold: 0.01 });
+      io.observe(drawer);
+    },
+
+    fixHostOverlapsOnce() {
       const dock = document.getElementById('v27-orderblock-scanner-dock');
       const wrap = document.getElementById('v27-scanner-body-wrap');
       const macro = document.getElementById('bybit-macro-timeline-ribbon');
@@ -176,6 +226,9 @@
         const st = document.createElement('style');
         st.id = 'qro-v298-resizable-css';
         st.textContent = `
+          button, a, select, input, [role="button"], .tf-pill, .tab-nav-btn {
+            touch-action: manipulation;
+          }
           #quant-readonly-drawer {
             padding-top: max(12px, env(safe-area-inset-top, 0px)) !important;
             padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
@@ -630,15 +683,19 @@
         return;
       }
       const mult = parseInt(this.params.mtfMult, 10) || 1;
+      const firstOpen = rawHost[0] ? rawHost[0].open : 0;
       const lastRaw = rawHost[rawHost.length - 1];
+      const curSym = window.currentSymbol || '';
+      const symChanged = curSym !== this.state.lastSymbol;
+      if (symChanged) this.state.lastSymbol = curSym;
       let lrStr = '';
       try {
         const mc = window.mainChart || window.chart || window.tvChart;
         const lr = mc && mc.timeScale ? mc.timeScale().getVisibleLogicalRange() : null;
         if (lr) lrStr = `${Math.round(lr.from)}:${Math.round(lr.to)}`;
       } catch (e) {}
-      const hash = `${rawHost.length}|${lastRaw.time}|${lastRaw.close}|${lastRaw.high}|${lastRaw.low}|${lastRaw.volume}|${lrStr}|${window.chartVisibleBars || 45}|${mult}|${JSON.stringify(this.params)}`;
-      if (!force && hash === this.state.lastHash) return;
+      const hash = `${curSym}|${firstOpen}|${rawHost.length}|${lastRaw.time}|${lastRaw.close}|${lastRaw.high}|${lastRaw.low}|${lastRaw.volume}|${lrStr}|${window.chartVisibleBars || 45}|${mult}|${JSON.stringify(this.params)}`;
+      if (!force && !symChanged && hash === this.state.lastHash) return;
       this.state.lastHash = hash;
       this.syncAndRender(rawHost);
     },
