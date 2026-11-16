@@ -3456,8 +3456,10 @@ function updateVisibleHighLowMarkers(candles) {
       minPriceLine = null;
     }
 
-    const fmtMax = maxH > 1000 ? maxH.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : maxH.toFixed(4);
-    const fmtMin = minL > 1000 ? minL.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : minL.toFixed(4);
+    const pMax = window.getDynamicPrecision ? window.getDynamicPrecision(maxH, window.currentSymbol) : (maxH < 1 ? 5 : 4);
+    const pMin = window.getDynamicPrecision ? window.getDynamicPrecision(minL, window.currentSymbol) : (minL < 1 ? 5 : 4);
+    const fmtMax = maxH > 1000 ? maxH.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : maxH.toFixed(pMax);
+    const fmtMin = minL > 1000 ? minL.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : minL.toFixed(pMin);
 
     maxPriceLine = candleSeries.createPriceLine({
       price: maxH,
@@ -3494,7 +3496,8 @@ function syncBybitTopHeader(sym, price, chg, high, low, vol) {
 
     const priceEl = document.getElementById('bybit-top-price');
     if (priceEl && price !== undefined) {
-      const fmtP = typeof price === 'number' ? (price > 1000 ? `$${price.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}` : `$${price.toFixed(4)}`) : price;
+      const pPrec = window.getDynamicPrecision ? window.getDynamicPrecision(price, sym) : (price < 1 ? 5 : 4);
+      const fmtP = typeof price === 'number' ? (price > 1000 ? `$${price.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}` : `$${price.toFixed(pPrec)}`) : price;
       priceEl.textContent = fmtP;
     }
 

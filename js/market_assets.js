@@ -6,21 +6,22 @@
 
 // Motore Dinamico Precisione Decimale (fino a 0.00000001 per meme token e micro-pip)
 window.getDynamicPrecision = function(price, symbol) {
+  const p = Math.abs(Number(price) || 0);
+  const minSubZero = (p > 0 && p < 1.0) ? 5 : 0;
   if (symbol) {
     const s = symbol.toUpperCase().trim().replace('/', '').replace('.MI', '');
     if (s.includes('PEPE') || s.includes('SHIB') || s.includes('BONK')) return 8;
     if (s.includes('FLOKI')) return 6;
-    if (s.endsWith('JPY')) return 3;
-    if (['EURUSD', 'GBPUSD', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD', 'EURGBP', 'USDCNY', 'USDCNH', 'USDHKD', 'USDSGD'].includes(s)) return 4;
+    if (s.endsWith('JPY')) return Math.max(minSubZero, 3);
+    if (['EURUSD', 'GBPUSD', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD', 'EURGBP', 'USDCNY', 'USDCNH', 'USDHKD', 'USDSGD'].includes(s)) return Math.max(minSubZero, 4);
     // Commodities specific precision
-    if (['RB', 'HO', 'NG', 'NATGAS'].includes(s)) return 4;
-    if (['HG', 'COPPER', 'SB'].includes(s)) return 4;
+    if (['RB', 'HO', 'NG', 'NATGAS'].includes(s)) return Math.max(minSubZero, 4);
+    if (['HG', 'COPPER', 'SB'].includes(s)) return Math.max(minSubZero, 4);
   }
-  const p = Math.abs(Number(price) || 0);
   if (p === 0) return 2;
   if (p < 0.0001) return 8;
   if (p < 0.01) return 6;
-  if (p < 1.0) return 4;   // es. ENA ~$0.1835, TIT.MI ~€0.2650, DOGE ~$0.1650, ADA ~$0.3850
+  if (p < 1.0) return 5;   // es. ENA ~$0.11680, TIT.MI ~€0.26500, DOGE ~$0.16500, ADA ~$0.38500
   if (p < 10.0) return 4;  // es. NEAR ~$4.0200, STLAM.MI ~€4.1500, NG ~$2.7480, RB ~$2.1240, HO ~$2.2850
   if (p < 100.0) return 2; // es. PST.MI ~€14.20, UCG.MI ~€78.65, CL ~$71.85, SI ~$32.84
   return 2;                // es. BTC ~$80,210.00, GC ~$2,746.50, NVDA ~$142.50
