@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '30.5-HYPER-FLUID',
+    version: '30.6-OMNI-SCROLL-FIX',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V305',
+    storageKey: 'QRO_LAYOUT_PARAMS_V306',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -74,6 +74,7 @@
       this.applyEfSplit();
       this.applyResponsiveColumns();
       this.fixHostOverlapsOnce();
+      this.upgradeTablesBidiScrollOnce();
       this.bindScrollAndUIYieldShield();
       this.bindInstantSymbolSwitchDetector();
       this.bindViewportObserver();
@@ -168,7 +169,55 @@
         macro.style.borderTop = '1px solid #1e293b';
         macro.style.clear = 'both';
         macro.style.marginTop = '2px';
+        macro.style.flexWrap = 'wrap';
+        macro.style.overflowX = 'visible';
       }
+    },
+
+    upgradeTablesBidiScrollOnce() {
+      const targets = [
+        document.getElementById('v27-scanner-body-wrap'),
+        document.getElementById('ced-electronic-field-wrap'),
+        document.getElementById('bybit-orderbook-card')
+      ].filter(Boolean);
+
+      document.querySelectorAll('table').forEach(tbl => {
+        const txt = (tbl.textContent || '').slice(0, 300);
+        if (txt.includes('Invia Bot') || txt.includes('Natura Posizione') || txt.includes('Campo Elettronico') || txt.includes('Ordine Prenota')) {
+          const p = tbl.parentElement;
+          if (p && !targets.includes(p)) targets.push(p);
+        }
+      });
+
+      targets.forEach((box, idx) => {
+        if (!box || box.dataset.qroBidiUpgraded) return;
+        box.dataset.qroBidiUpgraded = '1';
+        box.classList.add('qro-bidi-scroll-box');
+        if (box.parentElement && getComputedStyle(box.parentElement).overflowX === 'hidden') {
+          box.parentElement.style.overflowX = 'auto';
+        }
+        const bar = document.createElement('div');
+        bar.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:4px 8px; background:#070c16; border-bottom:1px solid #1e293b; font-size:10px;';
+        bar.innerHTML = `
+          <button type="button" data-act="sx" style="padding:2px 8px; border-radius:4px; background:#111827; border:1px solid #334155; color:#cbd5e1; cursor:pointer; font-weight:700;">◀ SX</button>
+          <button type="button" data-act="dx" style="padding:2px 8px; border-radius:4px; background:rgba(0,242,161,0.16); border:1px solid #00f2a1; color:#00f2a1; cursor:pointer; font-weight:800;">DX ▶ (Invia Bot)</button>
+          <button type="button" data-act="compact" style="padding:2px 8px; border-radius:4px; background:rgba(56,189,248,0.16); border:1px solid #38bdf8; color:#7dd3fc; cursor:pointer; font-weight:700;">📐 Compatta 100%</button>
+        `;
+        bar.addEventListener('click', (e) => {
+          const btn = e.target && e.target.closest ? e.target.closest('button[data-act]') : null;
+          if (!btn) return;
+          const act = btn.getAttribute('data-act');
+          if (act === 'sx') box.scrollBy({ left: -200, behavior: 'smooth' });
+          else if (act === 'dx') box.scrollTo({ left: box.scrollWidth, behavior: 'smooth' });
+          else if (act === 'compact') {
+            const on = box.classList.toggle('qro-compact-table');
+            btn.style.background = on ? 'rgba(250,204,21,0.22)' : 'rgba(56,189,248,0.16)';
+            btn.style.borderColor = on ? '#facc15' : '#38bdf8';
+            btn.style.color = on ? '#facc15' : '#7dd3fc';
+          }
+        });
+        if (box.parentElement) box.parentElement.insertBefore(bar, box);
+      });
     },
 
     applyResponsiveColumns() {
@@ -229,6 +278,18 @@
           button, a, select, input, [role="button"], .tf-pill, .tab-nav-btn {
             touch-action: manipulation;
           }
+          table, thead, tbody, tr, th, td, .qro-bidi-scroll-box {
+            touch-action: pan-x pan-y !important;
+          }
+          .qro-bidi-scroll-box {
+            overflow-x: auto !important;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            max-width: 100% !important;
+          }
+          .qro-compact-table table { font-size: 9px !important; }
+          .qro-compact-table th, .qro-compact-table td { padding: 2px 4px !important; white-space: nowrap !important; }
+          #bybit-macro-timeline-ribbon { flex-wrap: wrap !important; overflow-x: visible !important; row-gap: 4px !important; }
           #quant-readonly-drawer {
             padding-top: max(12px, env(safe-area-inset-top, 0px)) !important;
             padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;

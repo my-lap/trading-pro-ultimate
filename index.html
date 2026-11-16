@@ -1078,7 +1078,7 @@
                     <button type="button" onclick="if(window.OrderFlowEngine) OrderFlowEngine.toggleV27ScannerPanel()" style="padding:2px 7px; font-size:9.5px; font-weight:800; border-radius:4px; background:rgba(56,189,248,0.16); border:1px solid #38bdf8; color:#7dd3fc; cursor:pointer;">▾ Tabella</button>
                   </div>
                 </div>
-                <div id="v27-scanner-body-wrap" style="overflow-x:auto; max-height:380px; overflow-y:auto;">
+                <div id="v27-scanner-body-wrap" style="overflow-x:auto; max-height:380px; overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y;">
                   <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:10.5px; text-align:left;">
                     <thead>
                       <tr style="background:rgba(15,23,42,0.92); color:#94a3b8; font-size:9.5px; border-bottom:1px solid #1e293b;">
@@ -1097,7 +1097,7 @@
 
             
             <!-- BYBIT MACRO TIMELINE RIBBON (NOTIZIE ECONOMICHE SUL GRAFICO) -->
-            <div class="bybit-macro-timeline-ribbon" id="bybit-macro-timeline-ribbon" style="position:relative; z-index:5; background:#060b14; border-top:1px solid #1e293b; clear:both;">
+            <div class="bybit-macro-timeline-ribbon" id="bybit-macro-timeline-ribbon" style="position:relative; z-index:5; background:#060b14; border-top:1px solid #1e293b; clear:both; flex-wrap:wrap; overflow-x:visible;">
               <span style="font-size:10px; font-weight:800; color:#94a3b8; display:inline-flex; align-items:center; gap:4px;">
                 <span>📅 Macro Wire:</span>
               </span>
@@ -3951,7 +3951,7 @@
   <script src="js/free_llm_router_v28.js?v=29.3-chartfix"></script>
   <script src="js/trading_ced_suite_v18.js?v=29.3-chartfix"></script>
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(reg=>reg.update()));}</script>
-<script src="js/quant_addon_readonly.js?v=30.5-hyper-fluid" defer></script>
+<script src="js/quant_addon_readonly.js?v=30.6-omni-scroll-fix" defer></script>
 </body>
 </html>
 
