@@ -9,12 +9,12 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '29.5-PRO',
+    version: '29.7-argon',
     isVisible: true,
     params: {
-      drawerHeight: 520,      // Altezza totale del cassetto in pixel
-      subChart1Height: 155,   // Altezza Sub-Grafico A (Flussi)
-      subChart2Height: 205,   // Altezza Sub-Grafico B (Base Parametrizzata)
+      drawerHeight: 620,      // Altezza totale del cassetto in pixel
+      subChart1Height: 180,   // Altezza Sub-Grafico A (Flussi)
+      subChart2Height: 260,   // Altezza Sub-Grafico B (Base Parametrizzata)
       vpLookback: 60,         // Finestra candele per Volume Profile
       vpRows: 24,             // Numero righe/bin del VRVP
       vwapSigmaSpike: 2.5,    // Sensibilità σ per reset VWAP Ancorato
@@ -109,7 +109,7 @@
                 </select>
               </div>
             </div>
-            <canvas id="qro-subchart-flows" height="${this.params.subChart1Height}" style="width:100%; display:block; border-radius:4px;"></canvas>
+            <canvas id="qro-subchart-flows" height="${this.params.subChart1Height}" style="width:100%; min-height:${this.params.subChart1Height}px; display:block; border-radius:4px;"></canvas>
           </div>
 
           <!-- SUB-GRAFICO B: BASE PARAMETRIZZATA -->
@@ -122,7 +122,7 @@
                 <b style="color:#ff9100">█ VPIN Tossico</b> | <b style="color:#e040fb">█ Attrito VSA</b> | <b style="color:#ffd54f">█ POC</b> | <b style="color:#00e5ff">█ HVN</b> | <b style="color:#ff4081">█ LVN</b>
               </span>
             </div>
-            <canvas id="qro-subchart-base" height="${this.params.subChart2Height}" style="width:100%; display:block; border-radius:4px;"></canvas>
+            <canvas id="qro-subchart-base" height="${this.params.subChart2Height}" style="width:100%; min-height:${this.params.subChart2Height}px; display:block; border-radius:4px;"></canvas>
 
             <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; background:#050911; padding:8px 12px; border-radius:5px; margin-top:8px; font-size:11px;">
               <label>Finestra Candele VP: <b id="qro-lbl-vpLookback">${this.params.vpLookback}</b>
@@ -160,7 +160,20 @@
           </div>
         </div>
       `;
-      document.body.appendChild(drawer);
+      const mountTarget = document.getElementById('bybit-chart-column-wrap')
+        || document.getElementById('bb-col-chart')
+        || document.getElementById('tab-terminal')
+        || document.body;
+      mountTarget.appendChild(drawer);
+      // Assicura che nessun contenitore padre tagli fuori lo scroll del pannello
+      let p = drawer.parentElement;
+      while (p && p !== document.documentElement) {
+        const cs = window.getComputedStyle(p);
+        if (cs && (cs.overflowY === 'hidden' || cs.overflow === 'hidden')) {
+          p.style.overflowY = 'auto';
+        }
+        p = p.parentElement;
+      }
 
       document.getElementById('qro-toggle-btn').addEventListener('click', () => {
         this.isVisible = !this.isVisible;
@@ -231,9 +244,34 @@
       };
     },
 
+    drawPlaceholderCanvases() {
+      const drawEmpty = (id, h, title) => {
+        const cv = document.getElementById(id);
+        if (!cv) return;
+        const ctx = cv.getContext('2d');
+        const W = cv.width = cv.clientWidth || 960;
+        const H = cv.height = h;
+        ctx.fillStyle = '#060a10';
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = 'rgba(0,229,255,0.08)';
+        for (let i = 1; i < 4; i++) {
+          const y = (H / 4) * i;
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        }
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px monospace';
+        ctx.fillText(title, 16, H / 2);
+      };
+      drawEmpty('qro-subchart-flows', this.params.subChart1Height, '⏳ Sub-Grafico A (180px): in attesa dati candele WebSocket/API...');
+      drawEmpty('qro-subchart-base', this.params.subChart2Height, '⏳ Sub-Grafico B (260px): in attesa dati candele + VRVP...');
+    },
+
     syncAndRender() {
       const hostCandles = this.readHostCandlesReadOnly();
-      if (!hostCandles.length) return;
+      if (!hostCandles.length) {
+        this.drawPlaceholderCanvases();
+        return;
+      }
       this.state.candles = hostCandles;
       this.computeMetrics();
       const vis = this.getAlignedVisibleSlice();
