@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '30.0-PRO-SYNC',
+    version: '30.2-PROFIT-GUARD',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V300',
+    storageKey: 'QRO_LAYOUT_PARAMS_V302',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -22,10 +22,12 @@
       efSplitPct: 55,           // 35..75%
       timeGridSteps: 8,         // 4..16
       mtfMult: 1,               // 1 | 3 | 5 | 15
+      minConfidenceGate: 70,    // 50..90%
       beepEnabled: false,
       showAvwap: true,
       showPocLine: true,
       showValueArea: true,
+      showFreeRideLevels: true,
       vpLookback: 60,
       vpRows: 24,
       vwapSigmaSpike: 2.5,
@@ -73,10 +75,39 @@
         this.state.scrollTimer = setTimeout(() => { this.state.isScrolling = false; }, 180);
       };
       window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+      this.bindGlobalCrosshair();
       this.checkAndSync(true);
       setInterval(() => {
+        this.bindGlobalCrosshair();
         if (this.isVisible && !this.state.isScrolling) this.checkAndSync(false);
       }, 500);
+    },
+
+    bindGlobalCrosshair() {
+      if (this.state._hostCrosshairBound) return;
+      const mc = window.mainChart || window.mainChartInstance;
+      if (!mc || typeof mc.subscribeCrosshairMove !== 'function') return;
+      this.state._hostCrosshairBound = true;
+      mc.subscribeCrosshairMove((param) => {
+        if (!this.state.lastVis || !this.state.lastVis.candles.length || this.state.isScrolling) return;
+        let nextIdx = -1;
+        if (param && param.time) {
+          const tMs = Number(param.time) < 1e11 ? Number(param.time) * 1000 : Number(param.time);
+          nextIdx = this.state.lastVis.candles.findIndex(c => Math.abs(c.time - tMs) < 1500);
+        }
+        if (nextIdx === this.state.hoverIdx) return;
+        this.state.hoverIdx = nextIdx;
+        if (!this.state.rafPending) {
+          this.state.rafPending = true;
+          requestAnimationFrame(() => {
+            this.state.rafPending = false;
+            if (this.state.lastVis) {
+              this.drawCharts(this.state.lastVis);
+              this.updateCrosshairHUD(this.state.lastVis);
+            }
+          });
+        }
+      });
     },
 
     applyEfSplit() {
@@ -105,8 +136,10 @@
       drawer.innerHTML = `
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; background:#0b121e; padding:8px 12px; border-radius:6px; border:1px solid rgba(0,229,255,0.25);">
           <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-            <b style="color:#ffab00; font-size:13.5px;">⚡ SALA QUANT v30.0-PRO-SYNC (SNAP-TO-CLOCK)</b>
-            <span id="qro-sync-badge" style="font-size:11px; color:#00e676;">● Scroll Shield & 60fps</span>
+            <b style="color:#ffab00; font-size:13.5px;">🛡️ SALA QUANT v30.2-PROFIT-GUARD (5-GATE + FREE-RIDE + KELLY)</b>
+            <span id="qro-bot-arm-pill" style="font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:4px; background:rgba(245,158,11,0.16); border:1px solid #f59e0b; color:#fbbf24;">🔒 BOT IN VERIFICA</span>
+            <span id="qro-regime-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.35); color:#7dd3fc;">Regime: --</span>
+            <span id="qro-backtest-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(0,230,118,0.10); border:1px solid rgba(0,230,118,0.35); color:#00e676;">WR --% | PF -- | Kelly --%</span>
             <span id="qro-alert-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(0,230,118,0.12); border:1px solid rgba(0,230,118,0.4); color:#00e676;">🟢 Flusso Normale</span>
             <span id="qro-nextbar-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.35); color:#7dd3fc;">⏱️ Next bar: --:--</span>
             <span id="qro-askbid-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(15,23,42,0.8); border:1px solid #334155; color:#cbd5e1;">Ask --% | Bid --%</span>
@@ -146,9 +179,11 @@
             <label>Spessore Candele: <b id="qro-lbl-candleWidthPct">${this.params.candleWidthPct}</b>% <input type="range" min="40" max="92" step="2" value="${this.params.candleWidthPct}" data-param="candleWidthPct" class="qro-slider" style="width:60px; accent-color:#00e676;" /></label>
             <label>Split Campo 1s: <b id="qro-lbl-efSplitPct">${this.params.efSplitPct}</b>% <input type="range" min="35" max="75" step="5" value="${this.params.efSplitPct}" data-param="efSplitPct" class="qro-slider" style="width:60px; accent-color:#e040fb;" /></label>
             <label>Griglia Tempo: <b id="qro-lbl-timeGridSteps">${this.params.timeGridSteps}</b> <input type="range" min="4" max="16" step="1" value="${this.params.timeGridSteps}" data-param="timeGridSteps" class="qro-slider" style="width:55px; accent-color:#00e5ff;" /></label>
+            <label>Gate Bot: <b id="qro-lbl-minConfidenceGate">${this.params.minConfidenceGate}</b>% <input type="range" min="50" max="90" step="5" value="${this.params.minConfidenceGate}" data-param="minConfidenceGate" class="qro-slider" style="width:55px; accent-color:#00e676;" /></label>
             <label style="cursor:pointer;"><input type="checkbox" data-check="showAvwap" class="qro-check" ${this.params.showAvwap ? 'checked' : ''} /> VWAP Anc.</label>
             <label style="cursor:pointer;"><input type="checkbox" data-check="showPocLine" class="qro-check" ${this.params.showPocLine ? 'checked' : ''} /> POC Oro</label>
             <label style="cursor:pointer;"><input type="checkbox" data-check="showValueArea" class="qro-check" ${this.params.showValueArea ? 'checked' : ''} /> VA 70%</label>
+            <label style="cursor:pointer;"><input type="checkbox" data-check="showFreeRideLevels" class="qro-check" ${this.params.showFreeRideLevels ? 'checked' : ''} /> Free-Ride TP1→BE</label>
           </div>
 
           <!-- BARRA HUD MIRINO MAGNETICO SINCRONIZZATO -->
@@ -731,6 +766,23 @@
       }
       let score = 0;
       const reasons = [];
+      const vp = this.state.vpLevels || {};
+      const vah = vp.vah || lastC.high;
+      const val = vp.val || lastC.low;
+      const poc = vp.poc || lastC.close;
+
+      // Regime: RANGE VA Mean-Reversion vs TREND Breakout
+      const inVA = lastC.close >= val && lastC.close <= vah;
+      const regime = inVA ? 'RANGE VA Mean-Reversion' : 'TREND Breakout';
+
+      // Anti-Fakeout 5-Gate Filter + Stop-Hunt VSA
+      const range = Math.max(1e-8, lastC.high - lastC.low);
+      const upperWick = lastC.high - Math.max(lastC.open, lastC.close);
+      const lowerWick = Math.min(lastC.open, lastC.close) - lastC.low;
+      const isBullTrap = upperWick > range * 0.42 && lastM.delta < 0;
+      const isBearTrap = lowerWick > range * 0.42 && lastM.delta > 0;
+      const isStopHuntVSA = lastM.vsaFriction >= this.params.vsaFrictionThreshold && (isBullTrap || isBearTrap);
+      const trapLabel = isStopHuntVSA ? 'STOP-HUNT VSA' : (isBullTrap ? '⚠️ BULL TRAP' : (isBearTrap ? '⚠️ BEAR TRAP' : 'OK'));
 
       if (lastM.absorption.includes('SHORT')) { score -= 35; reasons.push('Divergenza CVD: Assorbimento Vendite (Short)'); }
       else if (lastM.absorption.includes('LONG')) { score += 35; reasons.push('Divergenza CVD: Assorbimento Acquisti (Long)'); }
@@ -741,21 +793,81 @@
       else { score -= 18; reasons.push('Prezzo sotto VWAP Ancorato'); }
 
       const isToxic = lastM.vpin >= this.params.vpinToxicThreshold;
-      if (isToxic) reasons.push(`Flusso VPIN Tossico (${(lastM.vpin * 100).toFixed(1)}%): Attivo solo breakout`);
+      if (isToxic) reasons.push(`Flusso VPIN Tossico (${(lastM.vpin * 100).toFixed(1)}%): Protezione Anti-Fakeout`);
+      if (isBullTrap || isBearTrap) {
+        score = Math.round(score * 0.4);
+        reasons.push(`🚫 Blocco 5-Gate: Rilevato ${trapLabel} su ombra di rigetto con Delta opposto`);
+      }
+
+      // 5 Gates evaluation
+      let gates = 0;
+      if (Math.abs(score) >= 15) gates++; // Gate 1: Struttura/Regime
+      if ((score >= 0 && lastC.close >= lastM.avwap) || (score <= 0 && lastC.close <= lastM.avwap)) gates++; // Gate 2: VWAP
+      if ((score >= 0 && lastM.delta >= 0) || (score <= 0 && lastM.delta <= 0)) gates++; // Gate 3: Delta/CVD
+      if (!isBullTrap && !isBearTrap && !isStopHuntVSA) gates++; // Gate 4: Anti-Trap/Stop-Hunt
+      if (!isToxic) gates++; // Gate 5: VPIN Guard
+      const confidencePct = Math.min(100, Math.round((gates / 5) * 60 + Math.min(40, Math.abs(score) * 0.5)));
+
+      // Rolling Backtest Live & Half-Kelly
+      let wins = 0, losses = 0, grossWin = 0, grossLoss = 0;
+      for (let i = 3; i < vis.candles.length - 1; i++) {
+        const c = vis.candles[i], m = vis.metrics[i], next = vis.candles[i + 1];
+        const bias = (m.delta >= 0 && c.close >= m.avwap) ? 1 : ((m.delta < 0 && c.close < m.avwap) ? -1 : 0);
+        if (!bias) continue;
+        const ret = ((next.close - c.close) / (c.close || 1)) * bias;
+        if (ret > 0) { wins++; grossWin += ret; } else { losses++; grossLoss += Math.abs(ret); }
+      }
+      const totTrades = wins + losses;
+      const winRate = totTrades ? (wins / totTrades) : 0.55;
+      const avgWin = wins ? (grossWin / wins) : 0.012;
+      const avgLoss = losses ? (grossLoss / losses) : 0.008;
+      const pf = grossLoss > 0 ? (grossWin / grossLoss) : 1.45;
+      const rr = avgLoss > 0 ? (avgWin / avgLoss) : 1.5;
+      const rawKelly = winRate - ((1 - winRate) / Math.max(0.2, rr));
+      const kellyPct = Math.max(0.5, Math.min(12.0, +(rawKelly * 50).toFixed(1))); // Half-Kelly prudenziale
 
       score = Math.max(-100, Math.min(100, Math.round(score)));
       let action = score >= 25 ? 'LONG' : (score <= -25 ? 'SHORT' : 'NEUTRALE');
-      const dec = lastC.close < 5 ? 4 : 2;
+      if (isBullTrap || isBearTrap) action = `BLOCCATO (${trapLabel})`;
 
+      const dir = score >= 0 ? 1 : -1;
+      const atrProxy = Math.max(lastC.close * 0.004, range * 1.4);
+      const entry = lastC.close;
+      const sl = entry - dir * atrProxy * 1.1;
+      const be = entry * (1 + dir * 0.0015);
+      const tp1 = entry + dir * atrProxy * 1.2;
+      const tp2 = entry + dir * atrProxy * 2.4;
+      const tp3 = entry + dir * atrProxy * 3.8;
+      this.state.freeRide = { entry, sl, be, tp1, tp2, tp3, dir };
+
+      const minGate = parseInt(this.params.minConfidenceGate, 10) || 70;
+      const botArmed = confidencePct >= minGate && !isBullTrap && !isBearTrap && !isToxic && Math.abs(score) >= 25;
+
+      const regEl = document.getElementById('qro-regime-pill');
+      if (regEl) regEl.textContent = `Regime: ${regime}`;
+      const btEl = document.getElementById('qro-backtest-pill');
+      if (btEl) btEl.textContent = `WR ${(winRate * 100).toFixed(0)}% | PF ${pf.toFixed(2)} | Kelly ${kellyPct}%`;
+      const armEl = document.getElementById('qro-bot-arm-pill');
+      if (armEl) {
+        if (botArmed) {
+          armEl.textContent = `🟢 AUTO-BOT ARMATO (${confidencePct}% | ${gates}/5 Gate)`;
+          armEl.style.color = '#00e676'; armEl.style.borderColor = '#00e676'; armEl.style.background = 'rgba(0,230,118,0.16)';
+        } else {
+          armEl.textContent = `🔒 BOT BLOCCATO (${confidencePct}% < ${minGate}% | ${trapLabel})`;
+          armEl.style.color = '#fbbf24'; armEl.style.borderColor = '#f59e0b'; armEl.style.background = 'rgba(245,158,11,0.16)';
+        }
+      }
+
+      const dec = this.getPriceDec(lastC.close);
       this.state.signal = {
-        score, action, isToxic,
+        score, action, isToxic, confidencePct, gates, botArmed,
         vpinPct: (lastM.vpin * 100).toFixed(1),
         vsaFriction: lastM.vsaFriction.toFixed(2),
         avwap: lastM.avwap.toFixed(dec),
-        poc: this.state.vpLevels.poc.toFixed(dec),
+        poc: poc.toFixed(dec),
         absorption: lastM.absorption,
         reasons,
-        modeAction: `[${this.params.tradingMode}] Setup ${action} (${score}/100) | POC: ${this.state.vpLevels.poc.toFixed(dec)}`
+        modeAction: `[${this.params.tradingMode}] ${regime} | Gate ${gates}/5 (${confidencePct}%) | TP1(40%): ${tp1.toFixed(dec)} → 🛡️BE ${be.toFixed(dec)} | Kelly ${kellyPct}%`
       };
     },
 
@@ -1029,6 +1141,30 @@
           drawBand(m => m.avwapUp1, 'rgba(56, 189, 248, 0.38)', 1, [3, 3]);
           drawBand(m => m.avwapDn1, 'rgba(56, 189, 248, 0.38)', 1, [3, 3]);
           drawBand(m => m.avwap, '#38bdf8', 1.8, []);
+        }
+
+        // Scaglioni Free-Ride (TP1 40% -> BE +0.15%, TP2 40%, TP3 20% Runner, SL)
+        if (this.params.showFreeRideLevels && this.state.freeRide) {
+          const fr = this.state.freeRide;
+          const drawFR = (price, lbl, col) => {
+            const y = yOf(price);
+            if (y < topPad || y > H - botPad) return;
+            ctx.save();
+            ctx.strokeStyle = col;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
+            ctx.fillStyle = 'rgba(6, 10, 18, 0.85)';
+            ctx.fillRect(6, y - 11, 136, 13);
+            ctx.fillStyle = col;
+            ctx.font = 'bold 9.5px monospace';
+            ctx.fillText(`${lbl} ${price.toFixed(dec)}`, 9, y - 1);
+            ctx.restore();
+          };
+          drawFR(fr.tp3, 'TP3 20% Run', '#00e5ff');
+          drawFR(fr.tp2, 'TP2 40%', '#00e676');
+          drawFR(fr.tp1, 'TP1 40%→🛡️BE', '#a7f3d0');
+          drawFR(fr.sl, 'SL Iniz.', '#ff5252');
         }
 
         // Pillole Prezzo Live Colorate sull'Asse Destro (Prezzo, POC, VWAP)
