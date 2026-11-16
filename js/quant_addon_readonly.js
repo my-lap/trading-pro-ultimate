@@ -9,9 +9,9 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '29.9-ULTRA-LIGHT',
+    version: '30.0-PRO-SYNC',
     isVisible: true,
-    storageKey: 'QRO_LAYOUT_PARAMS_V299',
+    storageKey: 'QRO_LAYOUT_PARAMS_V300',
     params: {
       drawerHeight: 680,
       subChart1Height: 180,     // 120..340px
@@ -105,9 +105,11 @@
       drawer.innerHTML = `
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; background:#0b121e; padding:8px 12px; border-radius:6px; border:1px solid rgba(0,229,255,0.25);">
           <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-            <b style="color:#ffab00; font-size:13.5px;">⚡ SALA QUANT v29.9-ULTRA-LIGHT (60FPS ZERO-TOUCH)</b>
-            <span id="qro-sync-badge" style="font-size:11px; color:#00e676;">● Scroll Shield & Smart-Diff</span>
+            <b style="color:#ffab00; font-size:13.5px;">⚡ SALA QUANT v30.0-PRO-SYNC (SNAP-TO-CLOCK)</b>
+            <span id="qro-sync-badge" style="font-size:11px; color:#00e676;">● Scroll Shield & 60fps</span>
             <span id="qro-alert-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(0,230,118,0.12); border:1px solid rgba(0,230,118,0.4); color:#00e676;">🟢 Flusso Normale</span>
+            <span id="qro-nextbar-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.35); color:#7dd3fc;">⏱️ Next bar: --:--</span>
+            <span id="qro-askbid-pill" style="font-size:10.5px; padding:2px 7px; border-radius:4px; background:rgba(15,23,42,0.8); border:1px solid #334155; color:#cbd5e1;">Ask --% | Bid --%</span>
           </div>
           <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
             <select id="qro-mtf-select" title="Aggregazione Multi-Timeframe in sola lettura" style="background:#050911; color:#38bdf8; border:1px solid #38bdf8; padding:4px 7px; border-radius:5px; font-weight:700; font-size:11px;">
@@ -182,13 +184,20 @@
           </div>
 
           <!-- SUB-GRAFICO A: FLUSSI -->
-          <div style="background:#0a101a; border:1px solid rgba(0,229,255,0.2); border-radius:6px; padding:8px; margin-bottom:10px;">
-            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; font-size:11.5px; margin-bottom:4px; gap:6px;">
+          <div style="background:#0a101a; border:1px solid rgba(0,229,255,0.2); border-radius:6px; padding:8px; margin-bottom:0;">
+            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:4px; gap:6px;">
               <span style="color:#00e5ff; font-weight:700;">
                 SUB-GRAFICO A — Flussi Delta Ask/Bid + Curva CVD Cumulativa + Tossicità VPIN
               </span>
-              <div style="display:flex; gap:10px; align-items:center;">
-                <span><b style="color:#00e676">█ Ask</b> | <b style="color:#ff5252">█ Bid</b> | <b style="color:#00e5ff">━ CVD</b> | <b style="color:#ffab00">━ VPIN</b></span>
+              <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                <span style="color:#94a3b8;">Alt A:</span>
+                <button type="button" class="qro-h-btn" data-target="subChart1Height" data-delta="-25" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 6px;cursor:pointer;">-</button>
+                <button type="button" class="qro-h-btn" data-target="subChart1Height" data-val="90" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">90px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart1Height" data-val="140" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">140px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart1Height" data-val="185" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">185px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart1Height" data-val="260" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">260px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart1Height" data-val="360" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">360px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart1Height" data-delta="25" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 6px;cursor:pointer;">+</button>
                 <select id="qro-sub1-mode" style="background:#050911; color:#fff; border:1px solid #334155; border-radius:4px; padding:2px 6px; font-size:11px;">
                   <option value="CVD_VPIN">Vista: Delta + CVD + VPIN</option>
                   <option value="VSA_EFFORT">Vista: Attrito VSA (Vol / Range)</option>
@@ -198,15 +207,27 @@
             <canvas id="qro-subchart-flows" height="${this.params.subChart1Height}" style="width:100%; min-height:${this.params.subChart1Height}px; display:block; border-radius:4px;"></canvas>
           </div>
 
+          <!-- LEVETTA CENTRALE TRASCINABILE (NS-RESIZE) -->
+          <div id="qro-center-splitter" title="Trascina su/giù per ridimensionare Sub-Grafico A e B" style="height:10px; margin:4px 0; background:rgba(0,229,255,0.10); border-top:1px solid rgba(0,229,255,0.28); border-bottom:1px solid rgba(255,213,79,0.28); cursor:ns-resize; display:flex; align-items:center; justify-content:center; user-select:none; touch-action:none; border-radius:3px;">
+            <div style="width:48px; height:3px; border-radius:2px; background:#00e5ff;"></div>
+          </div>
+
           <!-- SUB-GRAFICO B: BASE PARAMETRIZZATA -->
           <div style="background:#0a101a; border:1px solid rgba(255,213,79,0.25); border-radius:6px; padding:8px; margin-bottom:10px;">
-            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; font-size:11.5px; margin-bottom:4px; gap:6px;">
+            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:4px; gap:6px;">
               <span style="color:#ffd54f; font-weight:700;">
-                SUB-GRAFICO B — Candele Reali Filtrate (VPIN/VSA) + VWAP Ancorato + VRVP Ordini a Destra
+                SUB-GRAFICO B — Candele Reali Filtrate (VPIN/VSA) + VWAP Ancorato ±1σ + VRVP Ordini
               </span>
-              <span>
-                <b style="color:#ff9100">█ VPIN Tossico</b> | <b style="color:#e040fb">█ Attrito VSA</b> | <b style="color:#ffd54f">█ POC</b> | <b style="color:#00e5ff">█ HVN</b> | <b style="color:#ff4081">█ LVN</b>
-              </span>
+              <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                <span style="color:#94a3b8;">Alt B:</span>
+                <button type="button" class="qro-h-btn" data-target="subChart2Height" data-delta="-25" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 6px;cursor:pointer;">-</button>
+                <button type="button" class="qro-h-btn" data-target="subChart2Height" data-val="140" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">140px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart2Height" data-val="220" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">220px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart2Height" data-val="260" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">260px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart2Height" data-val="360" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">360px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart2Height" data-val="500" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 5px;cursor:pointer;">500px</button>
+                <button type="button" class="qro-h-btn" data-target="subChart2Height" data-delta="25" style="background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:1px 6px;cursor:pointer;">+</button>
+              </div>
             </div>
             <canvas id="qro-subchart-base" height="${this.params.subChart2Height}" style="width:100%; min-height:${this.params.subChart2Height}px; display:block; border-radius:4px;"></canvas>
 
@@ -341,6 +362,57 @@
           if (this.state.lastVis) this.drawCharts(this.state.lastVis);
         });
       });
+      document.querySelectorAll('.qro-h-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const target = btn.getAttribute('data-target');
+          const val = btn.getAttribute('data-val');
+          const delta = btn.getAttribute('data-delta');
+          const minH = target === 'subChart1Height' ? 70 : 120;
+          const maxH = target === 'subChart1Height' ? 420 : 540;
+          const cur = parseInt(this.params[target], 10) || 180;
+          const next = val !== null ? parseInt(val, 10) : Math.max(minH, Math.min(maxH, cur + parseInt(delta, 10)));
+          this.params[target] = next;
+          const lbl = document.getElementById(`qro-lbl-${target}`);
+          if (lbl) lbl.textContent = next;
+          this.saveParams();
+          this.checkAndSync(true);
+        });
+      });
+
+      const splitter = document.getElementById('qro-center-splitter');
+      if (splitter) {
+        let dragY = null, startH1 = 180, startH2 = 260;
+        const onMove = (clientY) => {
+          if (dragY === null) return;
+          const dy = clientY - dragY;
+          this.params.subChart1Height = Math.max(70, Math.min(420, startH1 + dy));
+          this.params.subChart2Height = Math.max(120, Math.min(540, startH2 - dy));
+          this.checkAndSync(true);
+        };
+        splitter.addEventListener('mousedown', (e) => {
+          dragY = e.clientY;
+          startH1 = parseInt(this.params.subChart1Height, 10) || 180;
+          startH2 = parseInt(this.params.subChart2Height, 10) || 260;
+        });
+        window.addEventListener('mousemove', (e) => { if (dragY !== null) onMove(e.clientY); });
+        window.addEventListener('mouseup', () => {
+          if (dragY !== null) { dragY = null; this.saveParams(); }
+        });
+        splitter.addEventListener('touchstart', (e) => {
+          if (e.touches && e.touches[0]) {
+            dragY = e.touches[0].clientY;
+            startH1 = parseInt(this.params.subChart1Height, 10) || 180;
+            startH2 = parseInt(this.params.subChart2Height, 10) || 260;
+          }
+        }, { passive: true });
+        splitter.addEventListener('touchmove', (e) => {
+          if (dragY !== null && e.touches && e.touches[0]) { e.preventDefault(); onMove(e.touches[0].clientY); }
+        }, { passive: false });
+        splitter.addEventListener('touchend', () => {
+          if (dragY !== null) { dragY = null; this.saveParams(); }
+        });
+      }
+
       document.getElementById('qro-audit-btn').addEventListener('click', () => this.runFreeAIAudit());
     },
 
@@ -497,6 +569,21 @@
       if (!vis || !vis.candles.length) return;
       const lastC = vis.candles[vis.candles.length - 1];
       const lastM = vis.metrics[vis.metrics.length - 1];
+      const totBuy = vis.candles.reduce((a, c) => a + c.askVol, 0);
+      const totSell = vis.candles.reduce((a, c) => a + c.bidVol, 0);
+      const totVol = (totBuy + totSell) || 1;
+      const askPct = ((totBuy / totVol) * 100).toFixed(1);
+      const bidPct = ((totSell / totVol) * 100).toFixed(1);
+      const askBidEl = document.getElementById('qro-askbid-pill');
+      if (askBidEl) askBidEl.innerHTML = `<b style="color:#00e676;">🟢 Ask ${askPct}%</b> | <b style="color:#ff5252;">🔴 Bid ${bidPct}%</b>`;
+      const nbEl = document.getElementById('qro-nextbar-pill');
+      if (nbEl && vis.candles.length > 1) {
+        const dt = Math.max(1000, Math.abs(vis.candles[vis.candles.length - 1].time - vis.candles[vis.candles.length - 2].time));
+        const remSec = Math.max(0, Math.floor((lastC.time + dt - Date.now()) / 1000) % Math.max(1, Math.round(dt / 1000)));
+        const mm = String(Math.floor(remSec / 60)).padStart(2, '0');
+        const ss = String(remSec % 60).padStart(2, '0');
+        nbEl.textContent = `⏱️ Next bar: ${mm}:${ss}`;
+      }
       const poc = this.state.vpLevels.poc || 0;
       const nearPoc = poc > 0 && Math.abs(lastC.close - poc) / poc < 0.0012;
       const highVpin = lastM && lastM.vpin >= this.params.vpinToxicThreshold;
@@ -627,6 +714,21 @@
       if (!vis.candles.length) return;
       const lastC = vis.candles[vis.candles.length - 1];
       const lastM = vis.metrics[vis.metrics.length - 1];
+      const totBuy = vis.candles.reduce((a, c) => a + c.askVol, 0);
+      const totSell = vis.candles.reduce((a, c) => a + c.bidVol, 0);
+      const totVol = (totBuy + totSell) || 1;
+      const askPct = ((totBuy / totVol) * 100).toFixed(1);
+      const bidPct = ((totSell / totVol) * 100).toFixed(1);
+      const askBidEl = document.getElementById('qro-askbid-pill');
+      if (askBidEl) askBidEl.innerHTML = `<b style="color:#00e676;">🟢 Ask ${askPct}%</b> | <b style="color:#ff5252;">🔴 Bid ${bidPct}%</b>`;
+      const nbEl = document.getElementById('qro-nextbar-pill');
+      if (nbEl && vis.candles.length > 1) {
+        const dt = Math.max(1000, Math.abs(vis.candles[vis.candles.length - 1].time - vis.candles[vis.candles.length - 2].time));
+        const remSec = Math.max(0, Math.floor((lastC.time + dt - Date.now()) / 1000) % Math.max(1, Math.round(dt / 1000)));
+        const mm = String(Math.floor(remSec / 60)).padStart(2, '0');
+        const ss = String(remSec % 60).padStart(2, '0');
+        nbEl.textContent = `⏱️ Next bar: ${mm}:${ss}`;
+      }
       let score = 0;
       const reasons = [];
 
@@ -685,16 +787,57 @@
 
     drawTimeGrid(ctx, candles, plotW, topPad, botY, H, steps) {
       const n = candles.length;
-      const every = Math.max(1, Math.floor(n / Math.max(4, Math.min(16, steps))));
-      for (let i = 0; i < n; i += every) {
-        const x = (i + 0.5) * (plotW / n);
-        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, botY); ctx.stroke();
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '10px monospace';
-        ctx.fillText(this.formatTime(candles[i].time), Math.max(2, x - 14), H - 5);
+      if (!n) return;
+      const spanMs = Math.abs(candles[n - 1].time - candles[0].time);
+      const useSubMin = spanMs < 20 * 60 * 1000;
+      let drawn = 0;
+      let lastLabelX = -100;
+      for (let i = 1; i < n; i++) {
+        const dPrev = new Date(candles[i - 1].time);
+        const dCur = new Date(candles[i].time);
+        let isMajor = false, isMinor = false;
+        if (useSubMin) {
+          isMajor = dCur.getMinutes() !== dPrev.getMinutes();
+          isMinor = !isMajor && Math.floor(dCur.getSeconds() / 15) !== Math.floor(dPrev.getSeconds() / 15);
+        } else {
+          isMajor = dCur.getHours() !== dPrev.getHours() || dCur.getMinutes() === 0;
+          const mCur = dCur.getMinutes(), mPrev = dPrev.getMinutes();
+          isMinor = !isMajor && ((mCur >= 30 && mPrev < 30) || (spanMs < 4 * 3600000 && Math.floor(mCur / 15) !== Math.floor(mPrev / 15)));
+        }
+        if (isMajor || isMinor) {
+          const x = (i + 0.5) * (plotW / n);
+          ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.035)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, botY); ctx.stroke();
+          if (x - lastLabelX >= 44) {
+            ctx.fillStyle = isMajor ? '#cbd5e1' : '#64748b';
+            ctx.font = isMajor ? 'bold 10px monospace' : '9.5px monospace';
+            ctx.fillText(this.formatTime(candles[i].time, useSubMin && isMinor), Math.max(2, x - 14), H - 5);
+            lastLabelX = x;
+          }
+          drawn++;
+        }
       }
+      if (drawn < 2) {
+        const every = Math.max(1, Math.floor(n / Math.max(4, Math.min(16, steps))));
+        for (let i = 0; i < n; i += every) {
+          const x = (i + 0.5) * (plotW / n);
+          ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+          ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, botY); ctx.stroke();
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '10px monospace';
+          ctx.fillText(this.formatTime(candles[i].time), Math.max(2, x - 14), H - 5);
+        }
+      }
+    },
+
+    drawAxisPill(ctx, x, y, w, text, bgColor, textColor = '#020617') {
+      const py = Math.max(9, y);
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(x, py - 8, Math.max(46, w - 4), 15);
+      ctx.fillStyle = textColor;
+      ctx.font = 'bold 9.5px monospace';
+      ctx.fillText(text, x + 4, py + 3);
     },
 
     drawMagneticCrosshair(ctx, candles, plotW, topPad, botY) {
@@ -733,6 +876,13 @@
         const barW = Math.max(2, Math.min(34, stepX * candleRatio));
         this.drawTimeGrid(ctx, candles, plotW, topPad, H - botPad, H, gridSteps);
 
+        // Filigrana (Watermark) istituzionale
+        ctx.save();
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.06)';
+        ctx.font = 'bold 24px system-ui, monospace';
+        ctx.fillText(`${window.currentSymbol || 'TRADING PRO'} • ${window.currentInterval || 'LIVE'}`, 18, Math.round(H * 0.56));
+        ctx.restore();
+
         if (this.params.subChart1Mode === 'CVD_VPIN') {
           const maxD = Math.max(...metrics.map(m => Math.abs(m.delta)), 1);
           const minCVD = Math.min(...metrics.map(m => m.cvd)), maxCVD = Math.max(...metrics.map(m => m.cvd));
@@ -769,6 +919,11 @@
             ctx.fillRect(x - barW / 2, topPad + plotH - h, barW, Math.max(2, h));
           });
         }
+        const lastFlowM = metrics[metrics.length - 1];
+        if (lastFlowM) {
+          this.drawAxisPill(ctx, chartW + 2, topPad + 12, rightAxisW, `CVD ${(lastFlowM.cvd / 1000).toFixed(0)}k`, '#00e5ff');
+          this.drawAxisPill(ctx, chartW + 2, topPad + plotH - 8, rightAxisW, `VP ${(lastFlowM.vpin * 100).toFixed(0)}%`, '#ffab00');
+        }
         this.drawMagneticCrosshair(ctx, candles, plotW, topPad, H - botPad);
       }
 
@@ -790,6 +945,13 @@
         const yOf = (p) => topPad + ((maxP - p) / (maxP - minP || 1e-8)) * plotH;
 
         this.drawTimeGrid(ctx, candles, plotW, topPad, H - botPad, H, gridSteps);
+
+        // Filigrana (Watermark) istituzionale
+        ctx.save();
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.06)';
+        ctx.font = 'bold 24px system-ui, monospace';
+        ctx.fillText(`${window.currentSymbol || 'TRADING PRO'} • ${window.currentInterval || 'LIVE'}`, 18, Math.round(H * 0.56));
+        ctx.restore();
 
         for (let g = 0; g <= 4; g++) {
           const y = topPad + (g / 4) * plotH;
@@ -832,8 +994,24 @@
           ctx.fillRect(x - barW / 2, yOf(Math.max(c.open, c.close)), barW, Math.max(2, yOf(Math.min(c.open, c.close)) - yOf(Math.max(c.open, c.close))));
         });
 
-        // Curva VWAP Ancorato (#38bdf8) + Bande ±1σ
+        // Curva VWAP Ancorato (#38bdf8) + Bande ±1σ con area sfumata
         if (this.params.showAvwap) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
+          ctx.beginPath();
+          metrics.forEach((m, i) => {
+            const x = (i + 0.5) * stepX;
+            const y = yOf(m.avwapUp1);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          for (let i = metrics.length - 1; i >= 0; i--) {
+            const x = (i + 0.5) * stepX;
+            ctx.lineTo(x, yOf(metrics[i].avwapDn1));
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
           const drawBand = (getter, col, w, dash) => {
             ctx.save();
             ctx.strokeStyle = col;
@@ -848,9 +1026,22 @@
             ctx.stroke();
             ctx.restore();
           };
-          drawBand(m => m.avwapUp1, 'rgba(56, 189, 248, 0.35)', 1, [3, 3]);
-          drawBand(m => m.avwapDn1, 'rgba(56, 189, 248, 0.35)', 1, [3, 3]);
+          drawBand(m => m.avwapUp1, 'rgba(56, 189, 248, 0.38)', 1, [3, 3]);
+          drawBand(m => m.avwapDn1, 'rgba(56, 189, 248, 0.38)', 1, [3, 3]);
           drawBand(m => m.avwap, '#38bdf8', 1.8, []);
+        }
+
+        // Pillole Prezzo Live Colorate sull'Asse Destro (Prezzo, POC, VWAP)
+        const lastC = candles[candles.length - 1];
+        const lastM = metrics[metrics.length - 1];
+        if (this.params.showAvwap && lastM) {
+          this.drawAxisPill(ctx, chartW + 2, yOf(lastM.avwap), rightAxisW, lastM.avwap.toFixed(dec), '#38bdf8');
+        }
+        if (this.params.showPocLine && this.state.vpLevels.poc) {
+          this.drawAxisPill(ctx, chartW + 2, yOf(this.state.vpLevels.poc), rightAxisW, this.state.vpLevels.poc.toFixed(dec), '#ffd54f');
+        }
+        if (lastC) {
+          this.drawAxisPill(ctx, chartW + 2, yOf(lastC.close), rightAxisW, lastC.close.toFixed(dec), lastC.close >= lastC.open ? '#00e676' : '#ff5252');
         }
 
         (this.state.vpLevels.bins || []).forEach(b => {
