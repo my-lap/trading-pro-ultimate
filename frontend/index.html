@@ -382,7 +382,7 @@
       <button id="btn-top-ced-v18" class="btn-ced-glow" type="button" onclick="switchMainTab('tab-ced-command-room')" title="Apri Sala Comando Sotto-Direttore CED & 6 Agenti Quantitativi">
         <span>👑📈</span> <span>Nuovi Agenti & Sala CED (6 Agenti Attivi)</span>
       </button>
-      <button id="btn-top-free-llm-v285" type="button" onclick="if(window.FreeLLMRouterV285) FreeLLMRouterV285.openModal()" title="Configura API Key gratuita OpenRouter (DeepSeek R1/V3 + Qwen 32B :free)" style="padding:4px 10px; font-size:11px; border-radius:6px; font-weight:900; cursor:pointer; background:rgba(0,242,161,0.16); border:1px solid #00f2a1; color:#00f2a1;">🧠⚡ AI Free (Qwen/DeepSeek)</button>
+      <button id="btn-top-free-llm-v285" type="button" onclick="window.openFreeLLMModal && window.openFreeLLMModal()" title="Configura API Key gratuita OpenRouter (Qwen 3.8/4 27B + DeepSeek R1/V3 + Nemotron)" style="padding:4px 10px; font-size:11px; border-radius:6px; font-weight:900; cursor:pointer; background:rgba(0,242,161,0.16); border:1px solid #00f2a1; color:#00f2a1;">🧠⚡ AI Free (Qwen/DeepSeek)</button>
       <button id="tab-demo-btn" class="account-tab active-demo" onclick="if(window.PortfolioEngine) PortfolioEngine.openPortfolioSector('demo'); if(window.TPUSupremeAccounts) TPUSupremeAccounts.switchMode('demo');" title="Conto Demo Istituzionale €30,000" style="padding:4px 10px; font-size:11px; border-radius:6px; font-weight:800; cursor:pointer; background:rgba(0,242,161,0.15); border:1px solid #00f2a1; color:#00f2a1;">🟢 Demo €30k</button>
       <button id="tab-live-btn" class="account-tab" onclick="if(window.PortfolioEngine) PortfolioEngine.openPortfolioSector('live'); if(window.TPUSupremeAccounts) TPUSupremeAccounts.switchMode('live');" title="Conto Reale Multi-Broker API" style="padding:4px 10px; font-size:11px; border-radius:6px; font-weight:800; cursor:pointer; background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fbbf24;">🔒 Reale Live</button>
       <button id="tab-cavaliere-memo-btn" class="cavaliere-memo-hud-btn" onclick="if(window.CavaliereMemoEngine) CavaliereMemoEngine.openModal();" title="Tribunale di Certificazione — Il Cavaliere Memo Giudice Attivo 24/7">
@@ -3946,7 +3946,7 @@
   <script src="js/tpu_security_guard.js?v=29.3-chartfix"></script>
   <script src="js/marketing_erp_engine.js?v=29.3-chartfix"></script>
   <script src="js/rnd_autonomous_agents.js?v=29.3-chartfix"></script>
-  <script src="js/free_llm_router.js?v=31.0-qwen4-omni"></script>
+  <script src="js/free_llm_router.js?v=31.2-auto-modal" defer></script>
   <script src="js/vercel_skills_bridge.js?v=29.3-chartfix"></script>
   <script src="js/free_llm_router_v28.js?v=29.3-chartfix"></script>
   <script src="js/trading_ced_suite_v18.js?v=29.3-chartfix"></script>

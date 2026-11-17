@@ -1,5 +1,5 @@
 /**
- * UNIVERSAL FREE LLM ROUTER v31.0-QWEN4-OMNI — 7 PROVIDERS (0,00€) + VISION + AUTO-TUNE
+ * UNIVERSAL FREE LLM ROUTER v31.2-AUTO-MODAL — 7 PROVIDERS (0,00€) + VISION + AUTO-TUNE
  * Supporta: Qwen 3.8 27B Vision (:free), Nemotron 3 Ultra/Super VL (:free), OpenRouter (:free + openrouter/free), Groq, Cerebras, Mistral, GitHub, Ollama qwen4:27b
  * Include: Auto-Discovery Live Modelli :free, Supporto Multimodale imageDataUrl, autoCalibrateTradingParams() e Timeout 3.8s anti-hang
  */
@@ -41,7 +41,7 @@
   ];
 
   window.FreeLLMRouter = {
-    version: '31.0-QWEN4-OMNI',
+    version: '31.2-AUTO-MODAL',
     discoveredFreeModels: [...DEFAULT_MODELS],
     lastActiveNode: null,
     openModal() { if (window.openFreeLLMModal) window.openFreeLLMModal(); },
@@ -365,10 +365,86 @@
     }
   };
 
+  window.ensureFreeLLMModalDOM = function() {
+    let modal = document.getElementById('free-llm-modal-backdrop');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'free-llm-modal-backdrop';
+    modal.style.cssText = 'position:fixed; inset:0; z-index:99999; background:rgba(4,8,18,0.86); backdrop-filter:blur(6px); display:none; align-items:center; justify-content:center; padding:12px;';
+    modal.innerHTML = `
+      <div style="width:100%; max-width:660px; max-height:92vh; overflow-y:auto; background:#0a1019; border:1.5px solid #00f2a1; border-radius:12px; padding:16px; color:#e2e8f0; font-family:system-ui,monospace; box-shadow:0 0 32px rgba(0,242,161,0.22);">
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #1e293b;">
+          <div style="font-weight:900; color:#00f2a1; font-size:14px;">🧠⚡ AI FREE v31.2 — QWEN 3.8/4 27B VISION + DEEPSEEK + NEMOTRON (0,00€)</div>
+          <span id="free-llm-status-badge" style="border:1px solid #00f2a1; color:#00f2a1; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;">🟢 0,00€ Free Router Ready</span>
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="display:block; font-size:11px; font-weight:700; color:#facc15; margin-bottom:4px;">Modello Primario Live (Qwen 3.8/4 27B Vision+Code, DeepSeek-R1/V3, Nemotron 3 Ultra 550B):</label>
+          <select id="free-llm-model-select" style="width:100%; padding:8px; background:#050911; border:1px solid #334155; border-radius:6px; color:#fff; font-size:12px;"></select>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px; margin-bottom:10px; font-size:11px;">
+          <div>
+            <label style="color:#38bdf8; font-weight:700;">1. OpenRouter Free Key (sk-or-v1-...):</label>
+            <input type="password" id="free-llm-key-openrouter" placeholder="sk-or-v1-..." style="width:100%; margin-top:3px; padding:6px; background:#050911; border:1px solid #334155; border-radius:5px; color:#fff;" />
+          </div>
+          <div>
+            <label style="color:#00f2a1; font-weight:700;">2. Groq LPU Free Key (800 tok/s):</label>
+            <input type="password" id="free-llm-key-groq" placeholder="gsk_... (opzionale)" style="width:100%; margin-top:3px; padding:6px; background:#050911; border:1px solid #334155; border-radius:5px; color:#fff;" />
+          </div>
+          <div>
+            <label style="color:#c084fc; font-weight:700;">3. Cerebras Free Key:</label>
+            <input type="password" id="free-llm-key-cerebras" placeholder="csk-... (opzionale)" style="width:100%; margin-top:3px; padding:6px; background:#050911; border:1px solid #334155; border-radius:5px; color:#fff;" />
+          </div>
+          <div>
+            <label style="color:#fb923c; font-weight:700;">4. Mistral Codestral Key:</label>
+            <input type="password" id="free-llm-key-mistral" placeholder="Key Mistral (opzionale)" style="width:100%; margin-top:3px; padding:6px; background:#050911; border:1px solid #334155; border-radius:5px; color:#fff;" />
+          </div>
+          <div>
+            <label style="color:#e2e8f0; font-weight:700;">5. GitHub Models Token:</label>
+            <input type="password" id="free-llm-key-github" placeholder="ghp_... (opzionale)" style="width:100%; margin-top:3px; padding:6px; background:#050911; border:1px solid #334155; border-radius:5px; color:#fff;" />
+          </div>
+          <div>
+            <label style="color:#2dd4bf; font-weight:700;">6. Ollama Locale (qwen4:27b):</label>
+            <input type="text" id="free-llm-key-ollama" value="http://localhost:11434/v1/chat/completions" style="width:100%; margin-top:3px; padding:6px; background:#050911; border:1px solid #334155; border-radius:5px; color:#fff;" />
+          </div>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-top:10px;">
+          <button type="button" onclick="window.closeFreeLLMModal()" style="padding:7px 12px; border-radius:6px; background:rgba(244,63,94,0.18); border:1px solid #f43f5e; color:#fda4af; font-weight:800; cursor:pointer;">✕ Chiudi</button>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            <button type="button" onclick="window.saveInstantOpenRouterKey()" style="padding:7px 11px; border-radius:6px; background:rgba(56,189,248,0.18); border:1px solid #38bdf8; color:#7dd3fc; font-weight:800; cursor:pointer;">💾 Salva Key</button>
+            <button type="button" onclick="window.runInstantOpenRouterTest()" style="padding:7px 12px; border-radius:6px; background:#00f2a1; border:none; color:#000; font-weight:900; cursor:pointer;">⚡ Test Ping Live</button>
+            <button type="button" onclick="window.runFreeAutoCalibrateFromModal()" style="padding:7px 12px; border-radius:6px; background:rgba(168,85,247,0.22); border:1px solid #a855f7; color:#e9d5ff; font-weight:800; cursor:pointer;">🧠 Auto-Calibra Slider Trading</button>
+          </div>
+        </div>
+        <div id="free-llm-status-box" style="margin-top:10px; padding:9px; background:#05080f; border:1px solid #1e293b; border-radius:6px; font-family:monospace; font-size:11.5px;">
+          🟢 Pronto: seleziona Qwen 3.8 27B / DeepSeek / Nemotron e clicca "⚡ Test Ping Live".
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) window.closeFreeLLMModal();
+    });
+    document.body.appendChild(modal);
+    window.FreeLLMRouter.populateSelect();
+    return modal;
+  };
+
+  window.runFreeAutoCalibrateFromModal = async function() {
+    window.FreeLLMRouter.setStatusBox('🧠 Auto-calibrazione parametri trading con Qwen 3.8 27B in corso...');
+    if (window.QuantReadonlyAddon && typeof window.QuantReadonlyAddon.runAutoTuneQwen === 'function') {
+      await window.QuantReadonlyAddon.runAutoTuneQwen();
+      const out = document.getElementById('qro-audit-output');
+      window.FreeLLMRouter.setStatusBox(out ? out.innerHTML : '✅ Parametri calibrati.');
+    } else {
+      const res = await window.FreeLLMRouter.autoCalibrateTradingParams({});
+      window.FreeLLMRouter.setStatusBox(`🧠 <b>[${res.model}]</b>: ${res.reason}`);
+    }
+  };
+
   window.openFreeLLMModal = function() {
-    const modal = document.getElementById('free-llm-modal-backdrop');
+    const modal = window.ensureFreeLLMModalDOM();
     if (modal) {
       modal.style.display = 'flex';
+      window.FreeLLMRouter.populateSelect();
       const keys = window.FreeLLMRouter.getKeys();
       const setVal = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
       setVal('free-llm-key-openrouter', keys.openrouter);
@@ -385,4 +461,20 @@
     const modal = document.getElementById('free-llm-modal-backdrop');
     if (modal) modal.style.display = 'none';
   };
+
+  function bindTopBarButton() {
+    document.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('#btn-top-free-llm-v285, [data-open-free-llm]') : null;
+      if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.openFreeLLMModal();
+      }
+    }, true);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindTopBarButton);
+  } else {
+    bindTopBarButton();
+  }
 })();
