@@ -1,7 +1,7 @@
 /**
- * UNIVERSAL FREE LLM ROUTER v30.0 — 7 PROVIDERS (0,00€) + VERCEL SKILLS BRIDGE
- * Supporta: OpenRouter (:free + openrouter/free), Groq LPU, Cerebras, Mistral Codestral, GitHub Models, Ollama Locale (:11434/:4000)
- * Include: Auto-Discovery Live Modelli :free, Timeout 3.5s anti-hang, Rotazione Anti-429 50ms e Bridge vercel-labs/skills
+ * UNIVERSAL FREE LLM ROUTER v31.0-QWEN4-OMNI — 7 PROVIDERS (0,00€) + VISION + AUTO-TUNE
+ * Supporta: Qwen 3.8 27B Vision (:free), Nemotron 3 Ultra/Super VL (:free), OpenRouter (:free + openrouter/free), Groq, Cerebras, Mistral, GitHub, Ollama qwen4:27b
+ * Include: Auto-Discovery Live Modelli :free, Supporto Multimodale imageDataUrl, autoCalibrateTradingParams() e Timeout 3.8s anti-hang
  */
 
 (function() {
@@ -19,6 +19,9 @@
   };
 
   const DEFAULT_MODELS = [
+    { id: 'qwen/qwen3.8-27b:free', label: 'Qwen 3.8 27B Multimodal (262K Vision + Coding + Math — 0,00€)', provider: 'openrouter' },
+    { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'NVIDIA Nemotron 3 Ultra 550B (1M Context — 0,00€)', provider: 'openrouter' },
+    { id: 'nvidia/nemotron-3.5-super-vl:free', label: 'NVIDIA Nemotron 3.5 Super VL (Vision — 0,00€)', provider: 'openrouter' },
     { id: 'openrouter/free', label: 'openrouter/free (Router Universale Auto-Free 0€)', provider: 'openrouter' },
     { id: 'deepseek/deepseek-r1:free', label: 'DeepSeek-R1 (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
     { id: 'qwen/qwen-2.5-coder-32b-instruct:free', label: 'Qwen 2.5 Coder 32B (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
@@ -27,7 +30,7 @@
     { id: 'llama3.1-70b', label: 'Llama 3.1 70B (Cerebras 1M tok/d) — 0.00 EUR', provider: 'cerebras' },
     { id: 'codestral-latest', label: 'Mistral Codestral Free — 0.00 EUR', provider: 'mistral' },
     { id: 'DeepSeek-R1', label: 'GitHub Models DeepSeek-R1 — 0.00 EUR', provider: 'github' },
-    { id: 'qwen2.5-coder:latest', label: 'Ollama Locale (:11434 / Proxy :4000) — 0.00 EUR', provider: 'ollama' }
+    { id: 'qwen4:27b', label: 'Ollama Locale qwen4:27b (:11434 / Proxy :4000) — 0.00 EUR', provider: 'ollama' }
   ];
 
   const VERCEL_SKILLS_CATALOG = [
@@ -38,9 +41,10 @@
   ];
 
   window.FreeLLMRouter = {
-    version: '30.0.0',
+    version: '31.0-QWEN4-OMNI',
     discoveredFreeModels: [...DEFAULT_MODELS],
     lastActiveNode: null,
+    openModal() { if (window.openFreeLLMModal) window.openFreeLLMModal(); },
 
     getKeys() {
       return {
@@ -112,15 +116,15 @@
             const bP = priorityKeywords.findIndex(k => b.id.toLowerCase().includes(k));
             return (aP === -1 ? 99 : aP) - (bP === -1 ? 99 : bP);
           });
-          const mapped = liveFree.slice(0, 28).map(m => ({
+          const seen = new Set(DEFAULT_MODELS.map(d => d.id));
+          const mapped = liveFree.filter(m => !seen.has(m.id)).slice(0, 28).map(m => ({
             id: m.id,
             label: `${m.name || m.id} (:free Live 0€)`,
             provider: 'openrouter'
           }));
           this.discoveredFreeModels = [
-            { id: 'openrouter/free', label: 'openrouter/free (Router Universale Auto-Free 0€)', provider: 'openrouter' },
-            ...mapped,
-            ...DEFAULT_MODELS.filter(d => d.provider !== 'openrouter')
+            ...DEFAULT_MODELS,
+            ...mapped
           ];
           this.populateSelect();
         }
@@ -157,12 +161,16 @@
       }
     },
 
-    async complete(promptText, systemPrompt = 'Sei il Sotto-Direttore Quantitativo CED. Rispondi in modo ultra-conciso e operativo.') {
+    async complete(promptText, systemPrompt = 'Sei il Sotto-Direttore Quantitativo CED. Rispondi in modo ultra-conciso e operativo.', imageDataUrl = null) {
+      if (systemPrompt && typeof systemPrompt === 'object') {
+        imageDataUrl = systemPrompt.imageDataUrl || imageDataUrl;
+        systemPrompt = systemPrompt.systemPrompt || 'Sei il Sotto-Direttore Quantitativo CED. Rispondi in modo ultra-conciso e operativo.';
+      }
       const keys = this.saveKeysFromModal();
       const candidates = [];
 
       if (keys.openrouter) {
-        const primary = keys.primaryModel || 'openrouter/free';
+        const primary = keys.primaryModel || 'qwen/qwen3.8-27b:free';
         candidates.push({
           name: `OpenRouter (${primary})`,
           url: 'https://openrouter.ai/api/v1/chat/completions',
@@ -226,9 +234,24 @@
         });
       }
 
+      if (keys.ollama) {
+        candidates.push({
+          name: 'Ollama Locale (qwen4:27b)',
+          url: keys.ollama,
+          headers: { 'Content-Type': 'application/json' },
+          model: 'qwen4:27b'
+        });
+      }
+
+      const userContent = imageDataUrl
+        ? [{ type: 'text', text: promptText }, { type: 'image_url', image_url: { url: imageDataUrl } }]
+        : promptText;
+
       const errors = [];
       for (const node of candidates) {
         try {
+          const isVisionCapable = node.model.includes('qwen3.8') || node.model.includes('-vl') || node.model.includes('qwen4') || node.model === 'openrouter/free';
+          const msgContent = (imageDataUrl && isVisionCapable) ? userContent : promptText;
           const res = await this.callWithTimeout(node.url, {
             method: 'POST',
             headers: node.headers,
@@ -236,9 +259,9 @@
               model: node.model,
               messages: [
                 { role: 'system', content: systemPrompt },
-                { role: 'user', content: promptText }
+                { role: 'user', content: msgContent }
               ],
-              max_tokens: 180
+              max_tokens: 240
             })
           }, 3800);
 
@@ -278,8 +301,54 @@
         ok: false,
         error: errors.length ? `Failover esaurito: ${errors.join(' | ')}` : 'Inserisci almeno 1 API Key gratuita (es. OpenRouter sk-or-v1-...)'
       };
+    },
+
+    async autoCalibrateTradingParams(marketContext = {}) {
+      const { regime = 'RANGE', vpinPct = 45, vsaFriction = 1.5, winRateEst = 55, profitFactor = 1.3 } = marketContext;
+      const clamp = (v, lo, hi, step) => {
+        const n = Math.max(lo, Math.min(hi, Number(v) || lo));
+        return step ? Math.round(n / step) * step : n;
+      };
+      const fallbackParams = {
+        vpLookback: String(regime).includes('TREND') ? 45 : 75,
+        vpRows: String(regime).includes('TREND') ? 20 : 28,
+        vwapSigmaSpike: Number(vsaFriction) > 2.2 ? 2.2 : 2.6,
+        vpinToxicThreshold: Number(vpinPct) > 65 ? 0.62 : 0.70,
+        minConfidenceGate: Number(winRateEst) < 52 ? 80 : 70
+      };
+      const prompt = `Sei un quant strategist. Calibra i 5 parametri per: Regime=${regime}, VPIN=${vpinPct}%, VSA=${vsaFriction}, WinRate=${winRateEst}%, PF=${profitFactor}. Rispondi SOLO con un JSON valido: {"vpLookback":20..150,"vpRows":12..48,"vwapSigmaSpike":1.5..4.0,"vpinToxicThreshold":0.40..0.90,"minConfidenceGate":50..90,"reason":"max 15 parole"}.`;
+      const res = await this.complete(prompt, 'Rispondi esclusivamente in JSON valido senza markdown.');
+      if (res.ok && res.reply) {
+        try {
+          const m = res.reply.match(/\{[\s\S]*\}/);
+          if (m) {
+            const parsed = JSON.parse(m[0]);
+            return {
+              ok: true,
+              model: res.model,
+              params: {
+                vpLookback: clamp(parsed.vpLookback, 20, 150, 5),
+                vpRows: clamp(parsed.vpRows, 12, 48, 4),
+                vwapSigmaSpike: +clamp(parsed.vwapSigmaSpike, 1.5, 4.0, 0.1).toFixed(1),
+                vpinToxicThreshold: +clamp(parsed.vpinToxicThreshold, 0.40, 0.90, 0.02).toFixed(2),
+                minConfidenceGate: clamp(parsed.minConfidenceGate, 50, 90, 5)
+              },
+              reason: parsed.reason || `Calibrazione AI completata per ${regime}.`
+            };
+          }
+        } catch (e) {}
+      }
+      return {
+        ok: false,
+        model: 'Local-Quant-Fallback',
+        params: fallbackParams,
+        reason: `Auto-calibrazione locale su ${regime} (VPIN ${vpinPct}%, VSA ${vsaFriction}).`
+      };
     }
   };
+
+  window.FreeLLMRouterV285 = window.FreeLLMRouter;
+  window.AntigravityInfiniteFreeRouterV28 = window.FreeLLMRouter;
 
   window.saveInstantOpenRouterKey = function() {
     window.FreeLLMRouter.saveKeysFromModal();

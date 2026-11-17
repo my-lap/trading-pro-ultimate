@@ -9,7 +9,7 @@
   'use strict';
 
   const QuantReadonlyAddon = {
-    version: '30.8-ZERO-LAG',
+    version: '31.0-QWEN4-OMNI',
     isVisible: true,
     storageKey: 'QRO_LAYOUT_PARAMS_V308',
     params: {
@@ -221,6 +221,9 @@
             </select>
             <button id="qro-audit-btn" style="background:#006064; color:#fff; border:1px solid #00e5ff; padding:4px 10px; border-radius:5px; cursor:pointer; font-weight:700; font-size:11.5px;">
               🏛️ Audit Sotto-Direttore CED (0€)
+            </button>
+            <button id="qro-autotune-btn" style="background:rgba(168,85,247,0.22); color:#e9d5ff; border:1px solid #a855f7; padding:4px 10px; border-radius:5px; cursor:pointer; font-weight:700; font-size:11.5px;">
+              🧠 Auto-Tune Qwen
             </button>
             <button id="qro-toggle-btn" style="background:#1e293b; color:#cbd5e1; border:1px solid #475569; padding:4px 10px; border-radius:5px; cursor:pointer; font-size:11.5px;">
               🔽 Nascondi / Mostra Pannello
@@ -470,6 +473,8 @@
       }
 
       document.getElementById('qro-audit-btn').addEventListener('click', () => this.runFreeAIAudit());
+      const autoBtn = document.getElementById('qro-autotune-btn');
+      if (autoBtn) autoBtn.addEventListener('click', () => this.runAutoTuneQwen());
     },
 
     readHostCandlesReadOnly() {
@@ -925,6 +930,7 @@
       const dec = this.getPriceDec(lastC.close);
       this.state.signal = {
         score, action, isToxic, confidencePct, gates, botArmed,
+        regime, winRateEst: +(winRate * 100).toFixed(1), profitFactor: +pf.toFixed(2),
         vpinPct: (lastM.vpin * 100).toFixed(1),
         vsaFriction: lastM.vsaFriction.toFixed(2),
         avwap: lastM.avwap.toFixed(dec),
@@ -1315,14 +1321,50 @@
 
     async runFreeAIAudit() {
       const out = document.getElementById('qro-audit-output');
-      if (out) out.innerHTML = '⏳ Audit Sotto-Direttore CED in corso tramite router AI Free...';
+      if (out) out.innerHTML = '⏳ Audit Visivo Multimodale (Qwen 3.8 27B Vision) in corso...';
       const s = this.state.signal;
-      const prompt = `Analisi setup: Score=${s.score}/100, Action=${s.action}, VPIN=${s.vpinPct}%, Attrito VSA=${s.vsaFriction}, VWAP=${s.avwap}, POC=${s.poc}. Dammi piano operativo in 2 righe con Entry, TP1, TP2 e SL.`;
+      const prompt = `Analisi setup: Score=${s.score}/100, Action=${s.action}, Regime=${s.regime || 'N/A'}, VPIN=${s.vpinPct}%, Attrito VSA=${s.vsaFriction}, VWAP=${s.avwap}, POC=${s.poc}. Osserva il grafico allegato (VRVP/VWAP/Free-Ride) e dammi piano operativo in 2 righe con Entry, TP1, TP2 e SL.`;
+      let imageDataUrl = null;
+      try {
+        const cv2 = document.getElementById('qro-subchart-base');
+        if (cv2) imageDataUrl = cv2.toDataURL('image/webp', 0.65);
+      } catch (e) {}
       if (window.FreeLLMRouter && typeof window.FreeLLMRouter.complete === 'function') {
-        const res = await window.FreeLLMRouter.complete(prompt);
-        if (out) out.innerHTML = res.ok ? `🟢 <b>[${res.model} — 0€]</b>: ${res.reply}` : `🟢 <b>Piano Calcolato</b>: ${s.modeAction}`;
+        const res = await window.FreeLLMRouter.complete(prompt, 'Sei il Sotto-Direttore Quantitativo CED. Analizza dati e grafico allegato in 2 righe operative.', imageDataUrl);
+        if (out) out.innerHTML = res.ok ? `🟢 <b>[${res.model} — 0€ Vision]</b>: ${res.reply}` : `🟢 <b>Piano Calcolato</b>: ${s.modeAction}`;
       } else if (out) {
         out.innerHTML = `🟢 <b>Piano Calcolato</b>: ${s.modeAction}`;
+      }
+    },
+
+    async runAutoTuneQwen() {
+      const out = document.getElementById('qro-audit-output');
+      if (out) out.innerHTML = '🧠 Calibrazione parametri quantitativi con Qwen 3.8 27B in corso...';
+      const s = this.state.signal || {};
+      if (!window.FreeLLMRouter || typeof window.FreeLLMRouter.autoCalibrateTradingParams !== 'function') {
+        if (out) out.innerHTML = '⚠️ Router FreeLLMRouter non disponibile.';
+        return;
+      }
+      const res = await window.FreeLLMRouter.autoCalibrateTradingParams({
+        regime: s.regime || 'RANGE VA Mean-Reversion',
+        vpinPct: s.vpinPct || 45,
+        vsaFriction: s.vsaFriction || 1.5,
+        winRateEst: s.winRateEst || 55,
+        profitFactor: s.profitFactor || 1.3
+      });
+      if (res && res.params) {
+        const drawer = document.getElementById('quant-readonly-drawer');
+        ['vpLookback', 'vpRows', 'vwapSigmaSpike', 'vpinToxicThreshold', 'minConfidenceGate'].forEach(k => {
+          if (res.params[k] === undefined) return;
+          this.params[k] = res.params[k];
+          const lbl = document.getElementById(`qro-lbl-${k}`);
+          if (lbl) lbl.textContent = res.params[k];
+          const inp = drawer ? drawer.querySelector(`input[data-param="${k}"]`) : null;
+          if (inp) inp.value = res.params[k];
+        });
+        this.saveParams();
+        this.checkAndSync(true);
+        if (out) out.innerHTML = `🧠 <b>Auto-Tune [${res.model}]:</b> VP=${res.params.vpLookback}/${res.params.vpRows} | VWAP=${res.params.vwapSigmaSpike}σ | VPIN=${res.params.vpinToxicThreshold} | Gate=${res.params.minConfidenceGate}% — <i>${res.reason}</i>`;
       }
     }
   };
