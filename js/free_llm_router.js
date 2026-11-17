@@ -26,6 +26,9 @@
     { id: 'deepseek/deepseek-r1:free', label: 'DeepSeek-R1 (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
     { id: 'qwen/qwen-2.5-coder-32b-instruct:free', label: 'Qwen 2.5 Coder 32B (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
     { id: 'deepseek/deepseek-chat-v3-0324:free', label: 'DeepSeek V3 0324 (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
+    { id: 'dots-studio/dots-3-note-preview:free', label: 'Dots3-Note Preview (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
+    { id: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
+    { id: 'cohere/north-mini-code:free', label: 'Cohere North Mini Code (:free OpenRouter) — 0.00 EUR', provider: 'openrouter' },
     { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Groq LPU 800 tok/s) — 0.00 EUR', provider: 'groq' },
     { id: 'llama3.1-70b', label: 'Llama 3.1 70B (Cerebras 1M tok/d) — 0.00 EUR', provider: 'cerebras' },
     { id: 'codestral-latest', label: 'Mistral Codestral Free — 0.00 EUR', provider: 'mistral' },
@@ -41,7 +44,7 @@
   ];
 
   window.FreeLLMRouter = {
-    version: '31.2-AUTO-MODAL',
+    version: '31.3-DUAL-SYNC',
     discoveredFreeModels: [...DEFAULT_MODELS],
     lastActiveNode: null,
     openModal() { if (window.openFreeLLMModal) window.openFreeLLMModal(); },
@@ -134,17 +137,37 @@
       return this.discoveredFreeModels;
     },
 
+    setPrimaryModel(modelId) {
+      if (!modelId) return;
+      try { localStorage.setItem(STORAGE_KEYS.PRIMARY_MODEL, modelId); } catch (e) {}
+      const targets = new Set([
+        document.getElementById('free-llm-model-select'),
+        document.getElementById('qro-inline-model-select'),
+        ...document.querySelectorAll('.free-llm-synced-select')
+      ].filter(Boolean));
+      targets.forEach(sel => { if (sel.value !== modelId) sel.value = modelId; });
+    },
+
     populateSelect() {
-      const sel = document.getElementById('free-llm-model-select');
-      if (!sel) return;
-      const current = localStorage.getItem(STORAGE_KEYS.PRIMARY_MODEL) || 'openrouter/free';
-      sel.innerHTML = '';
-      this.discoveredFreeModels.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.label;
-        if (m.id === current) opt.selected = true;
-        sel.appendChild(opt);
+      return this.populateAllSelects();
+    },
+
+    populateAllSelects() {
+      const current = localStorage.getItem(STORAGE_KEYS.PRIMARY_MODEL) || 'qwen/qwen3.8-27b:free';
+      const targets = new Set([
+        document.getElementById('free-llm-model-select'),
+        document.getElementById('qro-inline-model-select'),
+        ...document.querySelectorAll('.free-llm-synced-select')
+      ].filter(Boolean));
+      targets.forEach(sel => {
+        sel.innerHTML = '';
+        this.discoveredFreeModels.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.label;
+          if (m.id === current) opt.selected = true;
+          sel.appendChild(opt);
+        });
       });
     },
 
@@ -379,7 +402,7 @@
         </div>
         <div style="margin-bottom:10px;">
           <label style="display:block; font-size:11px; font-weight:700; color:#facc15; margin-bottom:4px;">Modello Primario Live (Qwen 3.8/4 27B Vision+Code, DeepSeek-R1/V3, Nemotron 3 Ultra 550B):</label>
-          <select id="free-llm-model-select" style="width:100%; padding:8px; background:#050911; border:1px solid #334155; border-radius:6px; color:#fff; font-size:12px;"></select>
+          <select id="free-llm-model-select" class="free-llm-synced-select" onchange="window.FreeLLMRouter && window.FreeLLMRouter.setPrimaryModel(this.value)" style="width:100%; padding:8px; background:#050911; border:1px solid #334155; border-radius:6px; color:#fff; font-size:12px;"></select>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px; margin-bottom:10px; font-size:11px;">
           <div>

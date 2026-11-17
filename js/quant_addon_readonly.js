@@ -222,8 +222,9 @@
             <button id="qro-audit-btn" style="background:#006064; color:#fff; border:1px solid #00e5ff; padding:4px 10px; border-radius:5px; cursor:pointer; font-weight:700; font-size:11.5px;">
               🏛️ Audit Sotto-Direttore CED (0€)
             </button>
-            <button id="qro-autotune-btn" style="background:rgba(168,85,247,0.22); color:#e9d5ff; border:1px solid #a855f7; padding:4px 10px; border-radius:5px; cursor:pointer; font-weight:700; font-size:11.5px;">
-              🧠 Auto-Tune Qwen
+            <select id="qro-inline-model-select" class="free-llm-synced-select" style="background:#050911; color:#00e676; border:1px solid #00e676; padding:3px 6px; border-radius:4px; font-weight:700; font-size:10px; max-width:240px;"></select>
+            <button id="qro-autotune-btn" style="background:#3b0764; color:#fde047; border:1px solid #e040fb; padding:3px 8px; border-radius:4px; cursor:pointer; font-weight:700; font-size:10px;">
+              🧠 Auto-Tune
             </button>
             <button id="qro-toggle-btn" style="background:#1e293b; color:#cbd5e1; border:1px solid #475569; padding:4px 10px; border-radius:5px; cursor:pointer; font-size:11.5px;">
               🔽 Nascondi / Mostra Pannello
@@ -473,6 +474,17 @@
       }
 
       document.getElementById('qro-audit-btn').addEventListener('click', () => this.runFreeAIAudit());
+      const inlineSel = document.getElementById('qro-inline-model-select');
+      if (inlineSel) {
+        inlineSel.addEventListener('change', (e) => {
+          if (window.FreeLLMRouter && typeof window.FreeLLMRouter.setPrimaryModel === 'function') {
+            window.FreeLLMRouter.setPrimaryModel(e.target.value);
+          }
+        });
+      }
+      if (window.FreeLLMRouter && typeof window.FreeLLMRouter.populateAllSelects === 'function') {
+        window.FreeLLMRouter.populateAllSelects();
+      }
       const autoBtn = document.getElementById('qro-autotune-btn');
       if (autoBtn) autoBtn.addEventListener('click', () => this.runAutoTuneQwen());
     },
