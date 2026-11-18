@@ -438,7 +438,15 @@
             <button type="button" onclick="window.runFreeAutoCalibrateFromModal()" style="padding:7px 12px; border-radius:6px; background:rgba(168,85,247,0.22); border:1px solid #a855f7; color:#e9d5ff; font-weight:800; cursor:pointer;">🧠 Auto-Calibra Slider Trading</button>
           </div>
         </div>
-        <div id="free-llm-status-box" style="margin-top:10px; padding:9px; background:#05080f; border:1px solid #1e293b; border-radius:6px; font-family:monospace; font-size:11.5px;">
+        <div style="margin-top:10px; padding:8px; background:#060c16; border:1px solid rgba(56,189,248,0.3); border-radius:6px;">
+          <label style="display:block; font-size:11px; font-weight:700; color:#38bdf8; margin-bottom:4px;">📸 Visual UI Cloner / Screenshot-to-Code (Qwen 3.8 27B Vision / Nemotron VL — 0,00€):</label>
+          <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+            <input type="file" id="free-llm-vision-file" accept="image/*" style="flex:1; min-width:160px; font-size:11px; color:#cbd5e1;" />
+            <input type="text" id="free-llm-vision-prompt" placeholder="Es: Clona questa UI in HTML/CSS o analizza il setup..." style="flex:2; min-width:180px; padding:5px 8px; background:#050911; border:1px solid #334155; border-radius:5px; color:#fff; font-size:11px;" />
+            <button type="button" onclick="window.runFreeVisionUIClone()" style="padding:6px 10px; border-radius:6px; background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#7dd3fc; font-weight:800; font-size:11px; cursor:pointer;">📸 Clona/Analizza UI (0€)</button>
+          </div>
+        </div>
+        <div id="free-llm-status-box" style="margin-top:10px; padding:9px; background:#05080f; border:1px solid #1e293b; border-radius:6px; font-family:monospace; font-size:11.5px; max-height:180px; overflow-y:auto;">
           🟢 Pronto: seleziona Qwen 3.8 27B / DeepSeek / Nemotron e clicca "⚡ Test Ping Live".
         </div>
       </div>
@@ -460,6 +468,30 @@
     } else {
       const res = await window.FreeLLMRouter.autoCalibrateTradingParams({});
       window.FreeLLMRouter.setStatusBox(`🧠 <b>[${res.model}]</b>: ${res.reason}`);
+    }
+  };
+
+  window.runFreeVisionUIClone = async function() {
+    const fileInp = document.getElementById('free-llm-vision-file');
+    const promptInp = document.getElementById('free-llm-vision-prompt');
+    const file = fileInp && fileInp.files ? fileInp.files[0] : null;
+    if (!file) {
+      window.FreeLLMRouter.setStatusBox('⚠️ Seleziona prima uno screenshot/immagine PNG/JPG da clonare o analizzare.');
+      return;
+    }
+    window.FreeLLMRouter.setStatusBox('⏳ Analisi visiva Qwen 3.8 27B Vision / Nemotron VL in corso...');
+    const imageDataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+    const prompt = (promptInp && promptInp.value.trim()) || 'Analizza questo screenshot UI (layout, colori, font, spaziature) e genera il codice HTML/CSS pulito del componente.';
+    const res = await window.FreeLLMRouter.complete(prompt, 'Sei l\'Agente Layout/UI Extractor & Clean Prototype Compiler. Rispondi in modo conciso e operativo.', imageDataUrl);
+    if (res.ok) {
+      window.FreeLLMRouter.setStatusBox(`📸 <b>[${res.model} — 0,00€ Vision]</b>:<br/>${String(res.reply).replace(/</g, '&lt;')}`);
+    } else {
+      window.FreeLLMRouter.setStatusBox(`⚠️ ${res.error}`);
     }
   };
 
@@ -486,6 +518,7 @@
   };
 
   function bindTopBarButton() {
+    window.FreeLLMRouter.populateAllSelects();
     document.addEventListener('click', (e) => {
       const btn = e.target && e.target.closest ? e.target.closest('#btn-top-free-llm-v285, [data-open-free-llm]') : null;
       if (btn) {
