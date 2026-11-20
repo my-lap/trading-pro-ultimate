@@ -1333,7 +1333,13 @@
 
     async runFreeAIAudit() {
       const out = document.getElementById('qro-audit-output');
-      if (out) out.innerHTML = '⏳ Audit Visivo Multimodale (Qwen 3.8 27B Vision) in corso...';
+      if (out) {
+        out.innerHTML = `<div style="display:flex;flex-direction:column;gap:5px;padding:2px 0;">
+          <span style="color:#38bdf8;font-weight:700;">⚡ Connessione streaming token-by-token (Qwen 3.8 27B Vision)...</span>
+          <div style="height:8px;width:88%;border-radius:4px;background:linear-gradient(90deg,#1e293b 25%,#334155 50%,#1e293b 75%);"></div>
+          <div style="height:8px;width:64%;border-radius:4px;background:linear-gradient(90deg,#1e293b 25%,#334155 50%,#1e293b 75%);"></div>
+        </div>`;
+      }
       const s = this.state.signal;
       const prompt = `Analisi setup: Score=${s.score}/100, Action=${s.action}, Regime=${s.regime || 'N/A'}, VPIN=${s.vpinPct}%, Attrito VSA=${s.vsaFriction}, VWAP=${s.avwap}, POC=${s.poc}. Osserva il grafico allegato (VRVP/VWAP/Free-Ride) e dammi piano operativo in 2 righe con Entry, TP1, TP2 e SL.`;
       let imageDataUrl = null;
@@ -1341,8 +1347,14 @@
         const cv2 = document.getElementById('qro-subchart-base');
         if (cv2) imageDataUrl = cv2.toDataURL('image/webp', 0.65);
       } catch (e) {}
-      if (window.FreeLLMRouter && typeof window.FreeLLMRouter.complete === 'function') {
-        const res = await window.FreeLLMRouter.complete(prompt, 'Sei il Sotto-Direttore Quantitativo CED. Analizza dati e grafico allegato in 2 righe operative.', imageDataUrl);
+      const sysPrompt = 'Sei il Sotto-Direttore Quantitativo CED. Analizza dati e grafico allegato in 2 righe operative.';
+      if (window.FreeLLMRouter && typeof window.FreeLLMRouter.completeStream === 'function') {
+        const res = await window.FreeLLMRouter.completeStream(prompt, sysPrompt, (_chunk, fullText) => {
+          if (out) out.innerHTML = `⚡ <b>[Streaming Live 0€]:</b> ${String(fullText).replace(/</g, '&lt;')}`;
+        }, { imageDataUrl });
+        if (out) out.innerHTML = res.ok ? `🟢 <b>[${res.model} — 0€ ${res.streamed ? 'Stream' : 'Vision'}]</b>: ${String(res.reply).replace(/</g, '&lt;')}` : `🟢 <b>Piano Calcolato</b>: ${s.modeAction}`;
+      } else if (window.FreeLLMRouter && typeof window.FreeLLMRouter.complete === 'function') {
+        const res = await window.FreeLLMRouter.complete(prompt, sysPrompt, imageDataUrl);
         if (out) out.innerHTML = res.ok ? `🟢 <b>[${res.model} — 0€ Vision]</b>: ${res.reply}` : `🟢 <b>Piano Calcolato</b>: ${s.modeAction}`;
       } else if (out) {
         out.innerHTML = `🟢 <b>Piano Calcolato</b>: ${s.modeAction}`;

@@ -100,7 +100,22 @@
       if (box) box.innerHTML = html;
     },
 
-    async discoverOpenRouterFreeModels() {
+    async discoverOpenRouterFreeModels(force = false) {
+      const CACHE_KEY = 'OPENROUTER_FREE_MODELS_CACHE_V314';
+      const TTL_MS = 10 * 60 * 1000; // 10 minuti (Regola 03)
+      if (!force) {
+        try {
+          const cachedRaw = sessionStorage.getItem(CACHE_KEY);
+          if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw);
+            if (cached && cached.ts && (Date.now() - cached.ts < TTL_MS) && Array.isArray(cached.models) && cached.models.length) {
+              this.discoveredFreeModels = cached.models;
+              this.populateAllSelects();
+              return this.discoveredFreeModels;
+            }
+          }
+        } catch (e) {}
+      }
       try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 3200);
@@ -129,7 +144,10 @@
             ...DEFAULT_MODELS,
             ...mapped
           ];
-          this.populateSelect();
+          try {
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), models: this.discoveredFreeModels }));
+          } catch (e) {}
+          this.populateAllSelects();
         }
       } catch (e) {
         // Fallback silenzioso su DEFAULT_MODELS
@@ -360,6 +378,18 @@
         ok: false,
         error: errors.length ? `Failover esaurito: ${errors.join(' | ')}` : 'Inserisci almeno 1 API Key gratuita (es. OpenRouter sk-or-v1-...)'
       };
+    },
+
+    async completeStream(promptText, systemPrompt = 'Sei il Sotto-Direttore Quantitativo CED. Rispondi in modo ultra-conciso e operativo.', onChunk = null, options = {}) {
+      const res = await this.complete(promptText, systemPrompt, options.imageDataUrl || null, {
+        ...options,
+        stream: true,
+        onToken: typeof onChunk === 'function' ? onChunk : null
+      });
+      if (res.ok && !res.streamed && typeof onChunk === 'function' && res.reply) {
+        onChunk(res.reply, res.reply);
+      }
+      return res;
     },
 
     async autoCalibrateTradingParams(marketContext = {}) {
