@@ -176,6 +176,17 @@
             overflow-y: hidden !important;
             -webkit-overflow-scrolling: touch !important;
           }
+          @keyframes qroShimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .qro-skeleton-line {
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #0f172a 25%, #334155 50%, #0f172a 75%);
+            background-size: 200% 100%;
+            animation: qroShimmer 1.2s linear infinite;
+          }
           #quant-readonly-drawer {
             padding-top: max(12px, env(safe-area-inset-top, 0px)) !important;
             padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
@@ -1336,8 +1347,8 @@
       if (out) {
         out.innerHTML = `<div style="display:flex;flex-direction:column;gap:5px;padding:2px 0;">
           <span style="color:#38bdf8;font-weight:700;">⚡ Connessione streaming token-by-token (Qwen 3.8 27B Vision)...</span>
-          <div style="height:8px;width:88%;border-radius:4px;background:linear-gradient(90deg,#1e293b 25%,#334155 50%,#1e293b 75%);"></div>
-          <div style="height:8px;width:64%;border-radius:4px;background:linear-gradient(90deg,#1e293b 25%,#334155 50%,#1e293b 75%);"></div>
+          <div class="qro-skeleton-line" style="width:88%;"></div>
+          <div class="qro-skeleton-line" style="width:64%;"></div>
         </div>`;
       }
       const s = this.state.signal;

@@ -44,9 +44,11 @@
   ];
 
   window.FreeLLMRouter = {
-    version: '31.3-DUAL-SYNC',
+    version: '31.4-HYPERSPEED',
     discoveredFreeModels: [...DEFAULT_MODELS],
     lastActiveNode: null,
+    _discoverInFlight: null,
+    rum: { calls: 0, streamedCalls: 0, cacheHits: 0, lastTtftMs: 0, lastLatencyMs: 0 },
     openModal() { if (window.openFreeLLMModal) window.openFreeLLMModal(); },
 
     getKeys() {
@@ -109,6 +111,7 @@
           if (cachedRaw) {
             const cached = JSON.parse(cachedRaw);
             if (cached && cached.ts && (Date.now() - cached.ts < TTL_MS) && Array.isArray(cached.models) && cached.models.length) {
+              this.rum.cacheHits++;
               this.discoveredFreeModels = cached.models;
               this.populateAllSelects();
               return this.discoveredFreeModels;
@@ -116,43 +119,49 @@
           }
         } catch (e) {}
       }
-      try {
-        const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 3200);
-        const res = await fetch('https://openrouter.ai/api/v1/models', { signal: controller.signal });
-        clearTimeout(tid);
-        if (!res.ok) return this.discoveredFreeModels;
-        const data = await res.json();
-        if (data && Array.isArray(data.data)) {
-          const liveFree = data.data.filter(m =>
-            (m.id && m.id.endsWith(':free')) ||
-            (m.pricing && String(m.pricing.prompt) === '0' && String(m.pricing.completion) === '0')
-          );
-          const priorityKeywords = ['qwen', 'deepseek', 'llama-3.3', 'gemini', 'mistral', 'particle', 'ling'];
-          liveFree.sort((a, b) => {
-            const aP = priorityKeywords.findIndex(k => a.id.toLowerCase().includes(k));
-            const bP = priorityKeywords.findIndex(k => b.id.toLowerCase().includes(k));
-            return (aP === -1 ? 99 : aP) - (bP === -1 ? 99 : bP);
-          });
-          const seen = new Set(DEFAULT_MODELS.map(d => d.id));
-          const mapped = liveFree.filter(m => !seen.has(m.id)).slice(0, 28).map(m => ({
-            id: m.id,
-            label: `${m.name || m.id} (:free Live 0€)`,
-            provider: 'openrouter'
-          }));
-          this.discoveredFreeModels = [
-            ...DEFAULT_MODELS,
-            ...mapped
-          ];
-          try {
-            sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), models: this.discoveredFreeModels }));
-          } catch (e) {}
-          this.populateAllSelects();
+      if (this._discoverInFlight) return this._discoverInFlight;
+      this._discoverInFlight = (async () => {
+        try {
+          const controller = new AbortController();
+          const tid = setTimeout(() => controller.abort(), 3200);
+          const res = await fetch('https://openrouter.ai/api/v1/models', { signal: controller.signal });
+          clearTimeout(tid);
+          if (!res.ok) return this.discoveredFreeModels;
+          const data = await res.json();
+          if (data && Array.isArray(data.data)) {
+            const liveFree = data.data.filter(m =>
+              (m.id && m.id.endsWith(':free')) ||
+              (m.pricing && String(m.pricing.prompt) === '0' && String(m.pricing.completion) === '0')
+            );
+            const priorityKeywords = ['qwen', 'deepseek', 'llama-3.3', 'gemini', 'mistral', 'particle', 'ling'];
+            liveFree.sort((a, b) => {
+              const aP = priorityKeywords.findIndex(k => a.id.toLowerCase().includes(k));
+              const bP = priorityKeywords.findIndex(k => b.id.toLowerCase().includes(k));
+              return (aP === -1 ? 99 : aP) - (bP === -1 ? 99 : bP);
+            });
+            const seen = new Set(DEFAULT_MODELS.map(d => d.id));
+            const mapped = liveFree.filter(m => !seen.has(m.id)).slice(0, 28).map(m => ({
+              id: m.id,
+              label: `${m.name || m.id} (:free Live 0€)`,
+              provider: 'openrouter'
+            }));
+            this.discoveredFreeModels = [
+              ...DEFAULT_MODELS,
+              ...mapped
+            ];
+            try {
+              sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), models: this.discoveredFreeModels }));
+            } catch (e) {}
+            this.populateAllSelects();
+          }
+        } catch (e) {
+          // Fallback silenzioso su DEFAULT_MODELS
+        } finally {
+          this._discoverInFlight = null;
         }
-      } catch (e) {
-        // Fallback silenzioso su DEFAULT_MODELS
-      }
-      return this.discoveredFreeModels;
+        return this.discoveredFreeModels;
+      })();
+      return this._discoverInFlight;
     },
 
     setPrimaryModel(modelId) {
@@ -293,6 +302,7 @@
         : promptText;
 
       const errors = [];
+      const tStart = performance.now();
       for (const node of candidates) {
         try {
           const isVisionCapable = node.model.includes('qwen3.8') || node.model.includes('-vl') || node.model.includes('qwen4') || node.model === 'openrouter/free';
@@ -315,6 +325,7 @@
           if (res.ok) {
             let reply = '';
             let usedModel = node.model;
+            let firstTokenTs = 0;
             if (canStream && res.body && typeof res.body.getReader === 'function') {
               const reader = res.body.getReader();
               const dec = new TextDecoder('utf-8');
@@ -335,6 +346,7 @@
                     if (chunk.model) usedModel = chunk.model;
                     const delta = chunk.choices?.[0]?.delta?.content || '';
                     if (delta) {
+                      if (!firstTokenTs) firstTokenTs = performance.now();
                       reply += delta;
                       if (onToken) onToken(delta, reply);
                     }
@@ -346,9 +358,14 @@
               reply = json.choices?.[0]?.message?.content || 'OK 0,00€';
               usedModel = json.model || node.model;
             }
+            const tEnd = performance.now();
+            this.rum.calls++;
+            if (canStream) this.rum.streamedCalls++;
+            this.rum.lastTtftMs = Math.round((firstTokenTs || tEnd) - tStart);
+            this.rum.lastLatencyMs = Math.round(tEnd - tStart);
             this.lastActiveNode = usedModel;
             this.updateStatusBadge(`🟢 0,00€ Connesso (${usedModel})`, true);
-            return { ok: true, model: usedModel, reply: reply || 'OK 0,00€', streamed: canStream };
+            return { ok: true, model: usedModel, reply: reply || 'OK 0,00€', streamed: canStream, ttftMs: this.rum.lastTtftMs, latencyMs: this.rum.lastLatencyMs };
           } else {
             errors.push(`${node.name}(${res.status})`);
           }
